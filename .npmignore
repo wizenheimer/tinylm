@@ -1,0 +1,70 @@
+# Source code
+src/
+examples/
+
+# Development files
+*.ts
+!*.d.ts
+tsconfig.json
+*.map
+
+# Build tools and config
+tsup.config.ts
+.github/
+.changeset/
+
+# Version control
+.git/
+.gitignore
+
+# Package management
+node_modules/
+pnpm-lock.yaml
+.npmrc
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+coverage/
+.nyc_output/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+*.sublime-*
+
+# Temporary files
+tmp/
+temp/
+.cache/
+preview/
+*.tgz
+
+# Documentation source files
+docs/
+documentation/
+*.md
+!README.md
+!LICENSE.md
+
+# CI
+.travis.yml
+.gitlab-ci.yml
+.circleci/
+azure-pipelines.yml
