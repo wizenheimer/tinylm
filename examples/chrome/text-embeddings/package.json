@@ -12,6 +12,6 @@
   "type": "module",
   "dependencies": {
     "@huggingface/transformers": "^3.3.3",
-    "tinylm": "^0.0.3"
+    "tinylm": "0.0.5"
   }
 }
