@@ -1,5 +1,11 @@
 # tinylm
 
+## 0.0.3
+
+### Patch Changes
+
+- 80ef282: add text-embeddings generation
+
 ## 0.0.2
 
 ### Patch Changes
