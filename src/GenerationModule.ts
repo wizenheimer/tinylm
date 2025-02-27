@@ -546,6 +546,15 @@ export class GenerationModule extends BaseModule {
    * @param {Record<string, any>} streamOptions - Stream options
    * @returns {AsyncGenerator<CompletionChunk>} Stream of chunks
    */
+  /**
+   * Stream a response in chunks - cross-platform compatible implementation
+   * Works in both browser and Node.js environments
+   * @private
+   * @param {TokenizedInputs} inputs - Tokenized inputs
+   * @param {Record<string, any>} params - Generation parameters
+   * @param {Record<string, any>} streamOptions - Stream options
+   * @returns {AsyncGenerator<CompletionChunk>} Stream of chunks
+   */
   private async *_streamResponse(
     inputs: TokenizedInputs,
     params: Record<string, any>,
@@ -568,10 +577,13 @@ export class GenerationModule extends BaseModule {
         message: `Generating streaming response with model: ${this.activeModel}`
       });
 
-      // Create a queue to store generated text chunks
+      // Set up cross-platform streaming using an event-based approach
+      // This works in both browser and Node.js environments
       const textQueue: string[] = [];
       let queueResolve: ((value: string | null) => void) | null = null;
       let generationComplete = false;
+      let hasError = false;
+      let errorMessage = '';
 
       // Function to wait for the next chunk
       const waitForChunk = (): Promise<string | null> => {
@@ -583,7 +595,11 @@ export class GenerationModule extends BaseModule {
           return Promise.resolve(null);
         }
 
-        return new Promise<string | null>(resolve => {
+        if (hasError) {
+          throw new Error(errorMessage);
+        }
+
+        return new Promise<string | null>((resolve, reject) => {
           queueResolve = resolve;
         });
       };
@@ -614,7 +630,9 @@ export class GenerationModule extends BaseModule {
         ...params
       } as unknown) as Record<string, any>).then((output: Record<string, any>) => {
         // Save for potential continuation
-        this.controller.setPastKeyValues(output.past_key_values);
+        if (output && output.past_key_values) {
+          this.controller.setPastKeyValues(output.past_key_values);
+        }
         generationComplete = true;
 
         // Resolve any pending waiters with null (end of stream)
@@ -623,15 +641,75 @@ export class GenerationModule extends BaseModule {
         }
       }).catch(error => {
         generationComplete = true;
+        hasError = true;
+        errorMessage = error instanceof Error ? error.message : String(error);
+
+        // Resolve any pending waiters to trigger error handling
         if (queueResolve) {
           queueResolve(null);
         }
-        throw error;
       });
 
       // Stream text chunks as they become available
-      let chunk: string | null;
-      while ((chunk = await waitForChunk()) !== null) {
+      try {
+        let chunk: string | null;
+        while ((chunk = await waitForChunk()) !== null) {
+          yield {
+            id: completionId,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: this.activeModel!,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: chunk
+                },
+                finish_reason: null
+              }
+            ]
+          };
+        }
+
+        // Check if there was an error during generation
+        if (hasError) {
+          throw new Error(errorMessage);
+        }
+
+        // Ensure generation is complete
+        await generatePromise;
+
+        // Final chunk with finish reason
+        yield {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: this.activeModel!,
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: 'stop'
+            }
+          ]
+        };
+
+        const totalTime = (performance.now() - startTime) / 1000;
+        this.progressTracker.update({
+          status: 'complete',
+          type: 'generation',
+          message: `Generation complete (${totalTime.toFixed(2)}s)`
+        });
+      } catch (error) {
+        // This will catch errors from both the generation process and the streaming process
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.progressTracker.update({
+          status: 'error',
+          type: 'generation',
+          message: `Streaming error: ${errMsg}`
+        });
+
+        // Yield error chunk
         yield {
           id: completionId,
           object: 'chat.completion.chunk',
@@ -641,45 +719,20 @@ export class GenerationModule extends BaseModule {
             {
               index: 0,
               delta: {
-                content: chunk
+                content: `\n[Error: ${errMsg}]`
               },
-              finish_reason: null
+              finish_reason: 'error'
             }
           ]
         };
       }
-
-      // Ensure generation is complete
-      await generatePromise;
-
-      // Final chunk with finish reason
-      yield {
-        id: completionId,
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: this.activeModel!,
-        choices: [
-          {
-            index: 0,
-            delta: {},
-            finish_reason: 'stop'
-          }
-        ]
-      };
-
-      const totalTime = (performance.now() - startTime) / 1000;
-      this.progressTracker.update({
-        status: 'complete',
-        type: 'generation',
-        message: `Generation complete (${totalTime.toFixed(2)}s)`
-      });
-
     } catch (error) {
+      // Catch any errors that might occur during the initial setup
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.progressTracker.update({
         status: 'error',
         type: 'generation',
-        message: `Streaming error: ${errorMessage}`
+        message: `Streaming setup error: ${errorMessage}`
       });
 
       // Yield error chunk
@@ -692,7 +745,7 @@ export class GenerationModule extends BaseModule {
           {
             index: 0,
             delta: {
-              content: `\n[Error: ${errorMessage}]`
+              content: `\n[Setup Error: ${errorMessage}]`
             },
             finish_reason: 'error'
           }

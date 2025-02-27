@@ -6,6 +6,74 @@
 type GarbageCollectionFunction = () => void;
 
 /**
+ * Environment detection result
+ */
+export interface EnvironmentInfo {
+  isNode: boolean;
+  isBrowser: boolean;
+  isWebWorker: boolean;
+  isDeno: boolean;
+  isEdgeFunction: boolean;
+  isCloudflareWorker: boolean;
+}
+
+/**
+ * Detect the current JavaScript runtime environment
+ * @returns {EnvironmentInfo} Environment information
+ */
+export function detectEnvironment(): EnvironmentInfo {
+  const env: EnvironmentInfo = {
+    isNode: false,
+    isBrowser: false,
+    isWebWorker: false,
+    isDeno: false,
+    isEdgeFunction: false,
+    isCloudflareWorker: false
+  };
+
+  // Check for Node.js
+  if (typeof process !== 'undefined' &&
+      process.versions != null &&
+      process.versions.node != null) {
+    env.isNode = true;
+    return env;
+  }
+
+  // Check for browser
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    env.isBrowser = true;
+    return env;
+  }
+
+  // Check for Web Worker
+  if (typeof self !== 'undefined' && typeof self.importScripts === 'function') {
+    env.isWebWorker = true;
+    return env;
+  }
+  // Check for Deno
+  if (typeof globalThis !== 'undefined' && 'Deno' in globalThis) {
+    env.isDeno = true;
+    return env;
+  }
+
+  // Check for Cloudflare Workers
+  if (typeof self !== 'undefined' && typeof caches !== 'undefined') {
+    env.isCloudflareWorker = true;
+    return env;
+  }
+
+  // Check for Edge Function (Vercel, Netlify)
+  if (typeof process !== 'undefined' && process.env && process.env.EDGE_RUNTIME) {
+    env.isEdgeFunction = true;
+    return env;
+  }
+
+  // Default to browser-like environment if we can't determine
+  env.isBrowser = true;
+  return env;
+}
+
+/**
  * Cross-platform utility to safely trigger garbage collection if available
  * Works in Node.js (with --expose-gc flag) and browsers (if they expose gc)
  */

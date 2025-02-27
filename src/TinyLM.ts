@@ -2,7 +2,7 @@
  * TinyLM - Modular library for text generation and embeddings
  */
 
-import { tryGarbageCollection } from './utils';
+import { tryGarbageCollection, detectEnvironment, EnvironmentInfo } from './utils';
 import { ProgressTracker } from './ProgressTracker';
 import { WebGPUChecker } from './WebGPUChecker';
 import { GenerationModule } from './GenerationModule';
@@ -28,6 +28,7 @@ export class TinyLM {
   private progressTracker: ProgressTracker;
   private webgpuChecker: WebGPUChecker;
   private initialized: boolean = false;
+  private environment: EnvironmentInfo;
 
   // Modules
   private generationModule: GenerationModule;
@@ -64,6 +65,9 @@ export class TinyLM {
       progressThrottleTime: options.progressThrottleTime || 100,
       ...options
     } as Required<TinyLMOptions>;
+
+    // Detect the current environment
+    this.environment = detectEnvironment();
 
     // Initialize components
     this.progressTracker = new ProgressTracker(
@@ -106,18 +110,33 @@ export class TinyLM {
   async checkCapabilities(): Promise<CapabilityInfo> {
     const gpuCapabilities = await this.webgpuChecker.check();
 
+    // Get runtime environment info
+    const runtimeInfo = {
+      ...this.environment,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+    };
+
     // Get CPU/GPU info from environment when available
-    let envInfo: Record<string, any> = {};
-    try {
-      // This would be environment-specific information from your original code
-      envInfo = {
-        // Include environment info here if available
-        backend: 'unknown',
-        cpuInfo: 'unknown',
-        gpuInfo: 'unknown'
-      };
-    } catch (error) {
-      // Environment variables not available
+    let envInfo: Record<string, any> = {
+      runtime: runtimeInfo,
+      backend: 'unknown',
+      cpuInfo: 'unknown',
+      gpuInfo: 'unknown'
+    };
+
+    // In Node.js environments, try to get more detailed info
+    if (this.environment.isNode) {
+      try {
+        // Only attempt to require these in Node environments
+        const os = require('os');
+        envInfo.cpuInfo = os.cpus()[0]?.model || 'unknown';
+        envInfo.totalMemory = os.totalmem();
+        envInfo.freeMemory = os.freemem();
+        envInfo.platform = os.platform();
+        envInfo.arch = os.arch();
+      } catch (error) {
+        // Ignore errors if modules can't be loaded
+      }
     }
 
     return {
@@ -173,5 +192,13 @@ export class TinyLM {
    */
   getWebGPUChecker(): WebGPUChecker {
     return this.webgpuChecker;
+  }
+
+  /**
+   * Get the current environment information
+   * @returns {EnvironmentInfo} Environment information
+   */
+  getEnvironment(): EnvironmentInfo {
+    return this.environment;
   }
 }

@@ -10,7 +10,8 @@ export { GenerationModule } from './GenerationModule';
 export { EmbeddingsModule } from './EmbeddingsModule';
 
 // Export utilities
-export { tryGarbageCollection } from './utils';
+export { tryGarbageCollection, detectEnvironment } from './utils';
+export type { EnvironmentInfo } from './utils';
 export { ProgressTracker } from './ProgressTracker';
 export { FileProgressTracker } from './FileProgressTracker';
 export { WebGPUChecker } from './WebGPUChecker';

@@ -5,7 +5,7 @@
 
 import { WebGPUChecker } from './WebGPUChecker';
 import { ProgressTracker } from './ProgressTracker';
-import { tryGarbageCollection } from './utils';
+import { tryGarbageCollection, EnvironmentInfo } from './utils';
 import { DeviceConfig } from './types';
 
 /**
@@ -27,6 +27,7 @@ export abstract class BaseModule implements TinyLMModule {
   protected tinyLM: any;
   protected progressTracker: ProgressTracker;
   protected webgpuChecker: WebGPUChecker;
+  protected environment: EnvironmentInfo;
 
   /**
    * Create a new module
@@ -36,6 +37,7 @@ export abstract class BaseModule implements TinyLMModule {
     this.tinyLM = tinyLM;
     this.progressTracker = tinyLM.getProgressTracker();
     this.webgpuChecker = tinyLM.getWebGPUChecker();
+    this.environment = tinyLM.getEnvironment();
   }
 
   /**
@@ -66,5 +68,21 @@ export abstract class BaseModule implements TinyLMModule {
     } catch (error) {
       // Ignore errors
     }
+  }
+
+  /**
+   * Check if running in a Node.js environment
+   * @returns {boolean} True if in Node.js environment
+   */
+  protected isNodeEnvironment(): boolean {
+    return this.environment.isNode;
+  }
+
+  /**
+   * Check if running in a browser environment
+   * @returns {boolean} True if in browser environment
+   */
+  protected isBrowserEnvironment(): boolean {
+    return this.environment.isBrowser;
   }
 }
