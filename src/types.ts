@@ -1,20 +1,32 @@
+/**
+ * Common types for TinyLM
+ */
+
 import {
   PreTrainedTokenizer,
   PreTrainedModel,
 } from "@huggingface/transformers";
 
-// Custom types for transformers.js
+/**
+ * Interface for model output
+ */
 export interface ModelOutput {
   sequences?: number[][];
   past_key_values?: any;
   [key: string]: any;
 }
 
+/**
+ * Interface for generate output
+ */
 export interface GenerateOutput extends ModelOutput {
   sequences: number[][];
   past_key_values?: any;
 }
 
+/**
+ * Interface for stopping criteria list
+ */
 export interface StoppingCriteriaList {
   criteria: any[];
   push: (criterion: any) => void;
@@ -23,6 +35,9 @@ export interface StoppingCriteriaList {
   shouldStop: (input_ids: number[][], scores: number[][], options?: any) => boolean;
 }
 
+/**
+ * Interface for generation function parameters
+ */
 export interface GenerationFunctionParameters {
   input_ids?: number[][];
   attention_mask?: number[][];
@@ -55,6 +70,9 @@ export interface WebGPUCapabilities {
   };
 }
 
+/**
+ * Device configuration
+ */
 export interface DeviceConfig {
   device?: string;
   dtype?: string;
@@ -75,6 +93,8 @@ export interface FileInfo {
   lastUpdateTime: number;
   speed: number; // bytes per second
   timeRemaining: number | null; // in seconds
+  // For compatibility with JS version:
+  total?: number;
   [key: string]: any;
 }
 
@@ -120,29 +140,37 @@ export interface ProgressTrackerOptions {
 }
 
 /**
- * Interface for TinyLM constructor options
+ * Interface for environment information
  */
-export interface TinyLMOptions {
-  progressCallback?: (progress: ProgressUpdate) => void;
-  progressThrottleTime?: number;
+export interface EnvInfo {
+  backend?: string;
+  cpuInfo?: string;
+  gpuInfo?: string;
   [key: string]: any;
 }
 
 /**
- * Interface for model loading options
+ * Interface for capability information
  */
-export interface ModelLoadOptions {
-  model: string;
-  quantization?: string;
-  [key: string]: any;
+export interface CapabilityInfo extends WebGPUCapabilities {
+  environment: EnvInfo;
+  transformersVersion?: string;
 }
 
 /**
- * Interface for model initialization options
+ * Interface for the loaded model registry entry
  */
-export interface InitOptions {
-  models?: string[];
-  lazyLoad?: boolean;
+export interface ModelRegistryEntry {
+  tokenizer: PreTrainedTokenizer;
+  model: PreTrainedModel;
+}
+
+/**
+ * Interface for the tokenized inputs
+ */
+export interface TokenizedInputs {
+  input_ids: number[][];
+  attention_mask?: number[][];
   [key: string]: any;
 }
 
@@ -208,35 +236,57 @@ export interface CompletionChunk {
 }
 
 /**
- * Interface for environment information
+ * Interface for TinyLM constructor options
  */
-export interface EnvInfo {
-  backend?: string;
-  cpuInfo?: string;
-  gpuInfo?: string;
+export interface TinyLMOptions {
+  progressCallback?: (progress: ProgressUpdate) => void;
+  progressThrottleTime?: number;
   [key: string]: any;
 }
 
 /**
- * Interface for capability information
+ * Interface for model loading options
  */
-export interface CapabilityInfo extends WebGPUCapabilities {
-  environment: EnvInfo;
-  transformersVersion: string;
-}
-
-/**
- * Interface for the loaded model registry entry
- */
-export interface ModelRegistryEntry {
-  tokenizer: PreTrainedTokenizer;
-  model: PreTrainedModel;
-}
-
-/**
- * Interface for the tokenized inputs
- */
-export interface TokenizedInputs {
-  input_ids: number[][];
+export interface ModelLoadOptions {
+  model: string;
+  quantization?: string;
   [key: string]: any;
+}
+
+/**
+ * Interface for model initialization options
+ */
+export interface InitOptions {
+  models?: string[];
+  embeddingModels?: string[];
+  lazyLoad?: boolean;
+  [key: string]: any;
+}
+
+/**
+ * Interface for embeddings creation options
+ */
+export interface EmbeddingCreateOptions {
+  model: string;
+  input: string | string[];
+  encoding_format?: 'float' | 'base64';
+  user?: string;
+  dimensions?: number;
+}
+
+/**
+ * Interface for embedding results
+ */
+export interface EmbeddingResult {
+  object: string;
+  data: Array<{
+    object: string;
+    embedding: number[] | string; // number[] for float, string for base64
+    index: number;
+  }>;
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
 }
