@@ -1,6 +1,13 @@
-import { StoppingCriteriaList } from "./types";
+/**
+ * GenerationController - Controls text generation, supports caching and interruption
+ */
 
-// Update InterruptableStoppingCriteria to implement StoppingCriteriaList
+import { StoppingCriteriaList } from './types';
+
+/**
+ * Interruptable stopping criteria
+ * Allows stopping generation early
+ */
 export class InterruptableStoppingCriteria implements StoppingCriteriaList {
   criteria: any[] = [];
   private interrupted: boolean = false;
@@ -47,7 +54,6 @@ export class InterruptableStoppingCriteria implements StoppingCriteriaList {
     });
   }
 }
-
 
 /**
  * Interruptable generation with the ability to stop generation midway
@@ -107,4 +113,3 @@ export class GenerationController {
     this.pastKeyValuesCache = pastKeyValues;
   }
 }
-

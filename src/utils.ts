@@ -1,5 +1,5 @@
 /**
- * TinyLM - Cross-platform garbage collection utility
+ * TinyLM Utility Functions
  */
 
 // Declare a utility type for garbage collection without conflicting with Node types

@@ -1,5 +1,12 @@
-import { DeviceConfig, WebGPUCapabilities } from "./types";
+/**
+ * WebGPUChecker - Detects and reports WebGPU capabilities
+ */
 
+import { WebGPUCapabilities, DeviceConfig } from './types';
+
+/**
+ * Checks for WebGPU support and available features
+ */
 export class WebGPUChecker {
   private isWebGPUSupported: boolean = false;
   private fp16Supported: boolean = false;
@@ -85,5 +92,21 @@ export class WebGPUChecker {
       device: "webgpu",
       dtype: this.fp16Supported ? "q4f16" : "q4"
     };
+  }
+}
+
+// WebGPU type declarations - only for browser environment
+declare global {
+  interface Navigator {
+    gpu?: {
+      requestAdapter(): Promise<GPUAdapter | null>;
+    };
+  }
+
+  interface GPUAdapter {
+    name: string;
+    description?: string;
+    features: Set<string>;
+    limits: Record<string, any>;
   }
 }
