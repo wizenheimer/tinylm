@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TinyLM Text Generation</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "tinylm": "./node_modules/tinylm/dist/index.mjs",
+        "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers/+esm"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --primary-color: #3b82f6;
+      --primary-hover: #2563eb;
+      --background: #f9fafb;
+      --card-bg: #ffffff;
+      --text-color: #1f2937;
+      --border-color: #e5e7eb;
+      --success-color: #10b981;
+      --error-color: #ef4444;
+      --warning-color: #f59e0b;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      color: var(--text-color);
+      background-color: var(--background);
+      padding: 0;
+      margin: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      color: var(--text-color);
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background-color: #ccc;
+    }
+
+    .status-indicator.green {
+      background-color: var(--success-color);
+    }
+
+    .status-indicator.red {
+      background-color: var(--error-color);
+    }
+
+    .status-indicator.yellow {
+      background-color: var(--warning-color);
+    }
+
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .system-status {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .status-item {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .progress-container {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background-color: var(--border-color);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background-color: var(--primary-color);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* File progress styles */
+    .file-progress-container {
+      margin-top: 1rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .file-progress-item {
+      margin-bottom: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      padding: 0.5rem;
+      background-color: var(--card-bg);
+    }
+
+    .file-progress-info {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+    }
+
+    .file-name {
+      font-size: 0.875rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .file-stats {
+      font-size: 0.75rem;
+      color: #666;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .file-progress-bar {
+      height: 4px;
+      background-color: var(--border-color);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .file-progress-bar-fill {
+      height: 100%;
+      background-color: var(--primary-color);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .file-status-error .file-progress-bar-fill {
+      background-color: var(--error-color);
+    }
+
+    .file-status-done .file-progress-bar-fill {
+      background-color: var(--success-color);
+    }
+
+    .fade-out {
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .overall-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 500px;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+
+    .message {
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      max-width: 80%;
+    }
+
+    .message.user {
+      background-color: var(--primary-color);
+      color: white;
+      align-self: flex-end;
+      margin-left: auto;
+    }
+
+    .message.assistant {
+      background-color: #f3f4f6;
+      align-self: flex-start;
+    }
+
+    .message.system {
+      background-color: var(--warning-color);
+      color: white;
+      align-self: center;
+      text-align: center;
+      max-width: 60%;
+      margin-left: auto;
+      margin-right: auto;
+      font-size: 0.875rem;
+    }
+
+    .chat-input {
+      display: flex;
+      padding: 1rem;
+      border-top: 1px solid var(--border-color);
+      background-color: var(--card-bg);
+    }
+
+    .chat-input input {
+      flex: 1;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      margin-right: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .chat-input button {
+      min-width: 100px;
+    }
+
+    .options-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .option-group {
+      display: flex;
+      flex-direction: column;
+      min-width: 200px;
+    }
+
+    .option-group label {
+      margin-bottom: 0.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .option-group select,
+    .option-group input {
+      padding: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+    }
+
+    .log-panel {
+      height: 200px;
+      overflow-y: auto;
+      background-color: #1a202c;
+      color: #cbd5e0;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.875rem;
+      border-radius: 0.375rem;
+    }
+
+    .log-entry {
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .toggle-button {
+      display: inline-block;
+      position: relative;
+      width: 48px;
+      height: 24px;
+      margin-right: 8px;
+    }
+
+    .toggle-button input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked+.toggle-slider {
+      background-color: var(--primary-color);
+    }
+
+    input:checked+.toggle-slider:before {
+      transform: translateX(24px);
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background-color: currentColor;
+      margin-left: 1px;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink {
+
+      from,
+      to {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>TinyLM Text Generation</h1>
+      <p>Chat with LLMs directly in your browser using TinyLM</p>
+    </header>
+
+    <div class="card">
+      <h2>System Status</h2>
+      <div class="system-status">
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="webgpu-status"></span>
+            <strong>WebGPU:</strong> <span id="webgpu-value">Checking...</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="fp16-status"></span>
+            <strong>FP16 Support:</strong> <span id="fp16-value">Checking...</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="model-status"></span>
+            <strong>Model Status:</strong> <span id="model-status-value">Not loaded</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <strong>Backend:</strong> <span id="backend-value">Unknown</span>
+          </div>
+        </div>
+      </div>
+      <div class="progress-container">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+          <span id="progress-label">Loading model...</span>
+          <span id="progress-percentage">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+
+        <!-- Overall stats display -->
+        <div id="overall-stats" class="overall-stats" style="display: none;">
+          <div>
+            <span id="loaded-size">0 B</span> / <span id="total-size">0 B</span>
+          </div>
+          <div>
+            <span id="download-speed">0 B/s</span> • <span id="eta">--</span>
+          </div>
+        </div>
+
+        <!-- File progress container -->
+        <div id="file-progress-container" class="file-progress-container" style="display: none;">
+          <!-- File progress items will be added here dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="options-panel">
+        <div class="option-group">
+          <label for="model-select">Model</label>
+          <select id="model-select">
+            <option value="onnx-community/DeepSeek-R1-Distill-Qwen-1.5B-ONNX">DeepSeek-R1-Distill-Qwen (1.5B)</option>
+          </select>
+        </div>
+        <div class="option-group">
+          <label for="temperature">Temperature</label>
+          <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7">
+          <span id="temperature-value">0.7</span>
+        </div>
+        <div class="option-group">
+          <label for="max-tokens">Max Tokens</label>
+          <input type="number" id="max-tokens" min="1" max="2048" value="512">
+        </div>
+        <div>
+          <button id="load-model-btn">Load Model</button>
+          <button id="unload-model-btn" disabled>Unload Model</button>
+        </div>
+      </div>
+
+      <div class="toggle-container" style="margin-bottom: 1rem;">
+        <label class="toggle-label">
+          <span class="toggle-button">
+            <input type="checkbox" id="stream-toggle" checked>
+            <span class="toggle-slider"></span>
+          </span>
+          Streaming Mode
+        </label>
+      </div>
+
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="message system">
+            Welcome to TinyLM Chat! Load a model to get started.
+          </div>
+        </div>
+        <div class="chat-input">
+          <input type="text" id="user-input" placeholder="Type your message here..." disabled>
+          <button id="send-btn" disabled>Send</button>
+          <button id="stop-btn" disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>System Log</h2>
+      <div class="log-panel" id="log-panel"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import TinyLM using import map
+    import { TinyLM } from 'tinylm';
+
+    // DOM Elements
+    const webgpuStatus = document.getElementById('webgpu-status');
+    const webgpuValue = document.getElementById('webgpu-value');
+    const fp16Status = document.getElementById('fp16-status');
+    const fp16Value = document.getElementById('fp16-value');
+    const modelStatus = document.getElementById('model-status');
+    const modelStatusValue = document.getElementById('model-status-value');
+    const backendValue = document.getElementById('backend-value');
+    const progressContainer = document.querySelector('.progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const overallStats = document.getElementById('overall-stats');
+    const loadedSize = document.getElementById('loaded-size');
+    const totalSize = document.getElementById('total-size');
+    const downloadSpeed = document.getElementById('download-speed');
+    const eta = document.getElementById('eta');
+    const fileProgressContainer = document.getElementById('file-progress-container');
+    const modelSelect = document.getElementById('model-select');
+    const temperatureInput = document.getElementById('temperature');
+    const temperatureValue = document.getElementById('temperature-value');
+    const maxTokensInput = document.getElementById('max-tokens');
+    const loadModelBtn = document.getElementById('load-model-btn');
+    const unloadModelBtn = document.getElementById('unload-model-btn');
+    const streamToggle = document.getElementById('stream-toggle');
+    const chatMessages = document.getElementById('chat-messages');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const logPanel = document.getElementById('log-panel');
+
+    // App state
+    let tiny = null;
+    let isGenerating = false;
+    let currentAssistantMessage = null;
+    let lastCursorElement = null;
+    let activeFiles = new Map();
+    let conversation = [];
+
+    // Initialize the app
+    async function initApp() {
+      addLogEntry('Initializing TinyLM...');
+
+      // Create TinyLM instance with progress tracking
+      tiny = new TinyLM({
+        progressCallback: handleDetailedProgress,
+        progressThrottleTime: 50
+      });
+
+      // Check hardware capabilities
+      addLogEntry('Checking hardware capabilities...');
+      const capabilities = await tiny.models.check();
+
+      // Update UI with capabilities
+      updateCapabilitiesUI(capabilities);
+
+      // Initialize TinyLM (without loading model yet)
+      await tiny.init({ lazyLoad: true });
+
+      addLogEntry('Initialization complete. Ready to load model.');
+
+      // Setup event listeners
+      setupEventListeners();
+    }
+
+    // Update the UI with capabilities info
+    function updateCapabilitiesUI(capabilities) {
+      const { isWebGPUSupported, fp16Supported, environment } = capabilities;
+
+      // WebGPU status
+      webgpuValue.textContent = isWebGPUSupported ? 'Available' : 'Not Available';
+      webgpuStatus.className = `status-indicator ${isWebGPUSupported ? 'green' : 'red'}`;
+
+      // FP16 support
+      fp16Value.textContent = fp16Supported ? 'Supported' : 'Not Supported';
+      fp16Status.className = `status-indicator ${fp16Supported ? 'green' : 'red'}`;
+
+      // Backend
+      if (environment && environment.backend) {
+        backendValue.textContent = environment.backend;
+      }
+
+      addLogEntry(`Hardware check: WebGPU ${isWebGPUSupported ? 'available' : 'not available'}, FP16 ${fp16Supported ? 'supported' : 'not supported'}`);
+    }
+
+    // Setup event listeners
+    function setupEventListeners() {
+      // Temperature slider
+      temperatureInput.addEventListener('input', () => {
+        temperatureValue.textContent = temperatureInput.value;
+      });
+
+      // Load model button
+      loadModelBtn.addEventListener('click', loadModel);
+
+      // Unload model button
+      unloadModelBtn.addEventListener('click', unloadModel);
+
+      // Send button
+      sendBtn.addEventListener('click', sendMessage);
+
+      // Stop button
+      stopBtn.addEventListener('click', stopGeneration);
+
+      // User input field
+      userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+    }
+
+    /**
+     * Handle detailed progress updates with file-level tracking
+     * @param {Object} progress - Progress update from TinyLM
+     */
+    function handleDetailedProgress(progress) {
+      const {
+        status,
+        type,
+        percentComplete,
+        message,
+        files,
+        overall
+      } = progress;
+
+      // Log message
+      let logMessage = `[${status}] (${type || 'unknown'}) ${message || ''}`;
+      addLogEntry(logMessage);
+
+      // Update progress bar for loading
+      if (type === 'model') {
+        if (typeof percentComplete === 'number') {
+          // Show progress container
+          progressContainer.style.display = 'block';
+
+          // Update progress bar width
+          progressBar.style.width = `${percentComplete}%`;
+
+          // Update percentage text
+          progressPercentage.textContent = `${percentComplete}%`;
+
+          // Update label text
+          progressLabel.textContent = message || 'Loading model...';
+        }
+
+        // Handle file-specific progress if available
+        if (Array.isArray(files) && files.length > 0) {
+          updateFileProgressDisplay(files, overall);
+        }
+
+        // Hide progress displays when complete
+        if (status === 'ready' || status === 'error') {
+          setTimeout(() => {
+            progressContainer.style.display = 'none';
+            clearFileProgressDisplay();
+          }, 1500);
+        }
+
+        // Update model status indicator
+        updateModelStatus(progress);
+      }
+
+      // Update generation status
+      if (type === 'generation') {
+        updateGenerationStatus(progress);
+      }
+    }
+
+    /**
+     * Update file progress display
+     * @param {Array} files - Array of file progress objects
+     * @param {Object} overall - Overall progress information
+     */
+    function updateFileProgressDisplay(files, overall) {
+      if (!fileProgressContainer) return;
+
+      // Show file container and overall stats
+      fileProgressContainer.style.display = 'block';
+      overallStats.style.display = 'flex';
+
+      // Track which files we've seen in this update
+      const currentFiles = new Set();
+
+      // Update existing file entries and create new ones
+      files.forEach(file => {
+        const fileId = file.id;
+        currentFiles.add(fileId);
+
+        // Get or create file progress element
+        let fileProgressElement = document.getElementById(`file-progress-${fileId}`);
+
+        if (!fileProgressElement) {
+          // Create new file progress element
+          fileProgressElement = document.createElement('div');
+          fileProgressElement.id = `file-progress-${fileId}`;
+          fileProgressElement.className = 'file-progress-item';
+          fileProgressElement.innerHTML = `
+                        <div class="file-progress-info">
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-stats">
+                                <span class="file-percentage">0%</span>
+                                <span class="file-size">0 / 0 B</span>
+                                <span class="file-speed"></span>
+                                <span class="file-eta"></span>
+                            </div>
+                        </div>
+                        <div class="file-progress-bar">
+                            <div class="file-progress-bar-fill"></div>
+                        </div>
+                    `;
+          fileProgressContainer.appendChild(fileProgressElement);
+          activeFiles.set(fileId, fileProgressElement);
+        }
+
+        // Update file progress element
+        updateFileProgressElement(fileProgressElement, file);
+
+        // Remove completed files after a delay
+        if (file.status === 'done' || file.status === 'error') {
+          setTimeout(() => {
+            if (fileProgressElement.parentNode) {
+              fileProgressElement.classList.add('fade-out');
+              setTimeout(() => {
+                if (fileProgressElement.parentNode) {
+                  fileProgressElement.parentNode.removeChild(fileProgressElement);
+                  activeFiles.delete(fileId);
+                }
+              }, 500); // Remove after fade animation
+            }
+          }, 1000); // Wait a second before starting fade
+        }
+      });
+
+      // Update overall stats if available
+      if (overall) {
+        updateOverallStats(overall);
+      }
+    }
+
+    /**
+     * Update individual file progress element
+     * @param {HTMLElement} element - File progress DOM element
+     * @param {Object} fileInfo - File progress information
+     */
+    function updateFileProgressElement(element, fileInfo) {
+      // Update percentage
+      const percentageElement = element.querySelector('.file-percentage');
+      if (percentageElement) {
+        percentageElement.textContent = `${fileInfo.percentComplete}%`;
+      }
+
+      // Update size info
+      const sizeElement = element.querySelector('.file-size');
+      if (sizeElement && fileInfo.bytesLoaded !== undefined) {
+        const loaded = formatBytes(fileInfo.bytesLoaded);
+        const total = formatBytes(fileInfo.bytesTotal);
+        sizeElement.textContent = `${loaded} / ${total}`;
+      }
+
+      // Update speed
+      const speedElement = element.querySelector('.file-speed');
+      if (speedElement && fileInfo.speed) {
+        speedElement.textContent = `${formatBytes(fileInfo.speed)}/s`;
+      }
+
+      // Update ETA
+      const etaElement = element.querySelector('.file-eta');
+      if (etaElement && fileInfo.timeRemaining) {
+        etaElement.textContent = `ETA: ${formatTime(fileInfo.timeRemaining)}`;
+      }
+
+      // Update progress bar
+      const progressBarFill = element.querySelector('.file-progress-bar-fill');
+      if (progressBarFill) {
+        progressBarFill.style.width = `${fileInfo.percentComplete}%`;
+      }
+
+      // Update status class
+      element.className = `file-progress-item file-status-${fileInfo.status}`;
+    }
+
+    /**
+     * Update overall stats display
+     * @param {Object} overall - Overall progress information
+     */
+    function updateOverallStats(overall) {
+      if (loadedSize) {
+        loadedSize.textContent = overall.formattedLoaded || '0 B';
+      }
+
+      if (totalSize) {
+        totalSize.textContent = overall.formattedTotal || '0 B';
+      }
+
+      if (downloadSpeed) {
+        downloadSpeed.textContent = overall.formattedSpeed || '0 B/s';
+      }
+
+      if (eta) {
+        eta.textContent = overall.formattedRemaining || '--';
+      }
+    }
+
+    /**
+     * Clear all file progress displays
+     */
+    function clearFileProgressDisplay() {
+      if (fileProgressContainer) {
+        fileProgressContainer.innerHTML = '';
+        fileProgressContainer.style.display = 'none';
+      }
+
+      if (overallStats) {
+        overallStats.style.display = 'none';
+      }
+
+      activeFiles.clear();
+    }
+
+    /**
+     * Update model status indicator
+     * @param {Object} progress - Progress update
+     */
+    function updateModelStatus(progress) {
+      const { status, type } = progress;
+
+      if (type === 'model') {
+        if (status === 'loading' || status === 'initiate' || status === 'progress') {
+          modelStatusValue.textContent = 'Loading...';
+          modelStatus.className = 'status-indicator yellow';
+          disableInterface(true);
+        } else if (status === 'ready' || status === 'done') {
+          modelStatusValue.textContent = 'Loaded';
+          modelStatus.className = 'status-indicator green';
+          enableInterface();
+        } else if (status === 'error') {
+          modelStatusValue.textContent = 'Error';
+          modelStatus.className = 'status-indicator red';
+          disableInterface(false);
+        } else if (status === 'offloaded') {
+          modelStatusValue.textContent = 'Not loaded';
+          modelStatus.className = 'status-indicator';
+          disableInterface(false);
+        }
+      }
+    }
+
+    /**
+     * Update generation status
+     * @param {Object} progress - Progress update
+     */
+    function updateGenerationStatus(progress) {
+      const { status, type } = progress;
+
+      if (type === 'generation') {
+        if (status === 'generating') {
+          isGenerating = true;
+          stopBtn.disabled = false;
+          sendBtn.disabled = true;
+          userInput.disabled = true;
+        } else if (status === 'complete' || status === 'error' || status === 'interrupted') {
+          isGenerating = false;
+          stopBtn.disabled = true;
+          sendBtn.disabled = false;
+          userInput.disabled = false;
+
+          // Remove typing cursor
+          if (lastCursorElement) {
+            lastCursorElement.remove();
+            lastCursorElement = null;
+          }
+        }
+      }
+    }
+
+    /**
+     * Format bytes to human-readable size
+     * @param {number} bytes - Bytes to format
+     * @returns {string} Human-readable size
+     */
+    function formatBytes(bytes) {
+      if (bytes === 0 || !bytes) return '0 B';
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+    }
+
+    /**
+     * Format seconds to human-readable time
+     * @param {number} seconds - Seconds to format
+     * @returns {string} Human-readable time
+     */
+    function formatTime(seconds) {
+      if (!seconds || seconds === 0) return '';
+      if (seconds < 60) return `${Math.ceil(seconds)}s`;
+      if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.ceil(seconds % 60);
+        return `${minutes}m ${secs}s`;
+      }
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
+
+    // Load the selected model
+    async function loadModel() {
+      try {
+        const modelId = modelSelect.value;
+        addLogEntry(`Loading model: ${modelId}`);
+
+        // Clear any existing progress display
+        clearFileProgressDisplay();
+
+        // UI updates
+        disableInterface(true);
+        loadModelBtn.disabled = true;
+
+        // Add system message
+        addMessage('system', `Loading model: ${modelId}...`);
+
+        // Reset conversation
+        conversation = [];
+
+        // Load the model
+        await tiny.models.load({ model: modelId });
+
+        // UI updates on success
+        addMessage('system', `Model ${modelId} loaded successfully! You can start chatting now.`);
+        enableInterface();
+
+      } catch (error) {
+        // UI updates on error
+        addLogEntry(`Error loading model: ${error.message}`);
+        addMessage('system', `Error loading model: ${error.message}`);
+        disableInterface(false);
+      }
+    }
+
+    // Unload the current model
+    async function unloadModel() {
+      try {
+        const modelId = modelSelect.value;
+        addLogEntry(`Unloading model: ${modelId}`);
+
+        // UI updates
+        disableInterface(true);
+        unloadModelBtn.disabled = true;
+
+        // Add system message
+        addMessage('system', `Unloading model: ${modelId}...`);
+
+        // Unload the model
+        await tiny.models.offload({ model: modelId });
+
+        // UI updates on success
+        addMessage('system', `Model ${modelId} unloaded successfully.`);
+        disableInterface(false);
+
+        // Reset conversation
+        conversation = [];
+
+      } catch (error) {
+        // UI updates on error
+        addLogEntry(`Error unloading model: ${error.message}`);
+        addMessage('system', `Error unloading model: ${error.message}`);
+        enableInterface();
+      }
+    }
+
+    // Send a user message
+    async function sendMessage() {
+      const message = userInput.value.trim();
+      if (!message || isGenerating) return;
+
+      // Add user message to chat
+      addMessage('user', message);
+
+      // Clear input field
+      userInput.value = '';
+
+      // Add message to conversation
+      conversation.push({ role: 'user', content: message });
+
+      // Construct messages array with context
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a helpful AI assistant powered by TinyLM.'
+        },
+        ...conversation
+      ];
+
+      // Create assistant message placeholder
+      addAssistantMessagePlaceholder();
+
+      try {
+        // Set generation options
+        const options = {
+          model: modelSelect.value,
+          messages,
+          temperature: parseFloat(temperatureInput.value),
+          max_tokens: parseInt(maxTokensInput.value),
+          stream: false  // Disable streaming for now
+        };
+
+        addLogEntry(`Generating response with temperature ${options.temperature} and max_tokens ${options.max_tokens}`);
+
+        // Start generation
+        const startTime = performance.now();
+
+        if (options.stream) {
+          // Handle streaming response
+          const stream = await tiny.chat.completions.create(options);
+
+          let fullResponse = "";
+          for await (const chunk of stream) {
+            // Safely extract content from the chunk
+            const content = chunk?.choices?.[0]?.delta?.content ?? '';
+            if (content) {
+              updateAssistantMessage(content);
+              fullResponse += content;
+            }
+          }
+
+          // Save assistant response to conversation
+          conversation.push({ role: 'assistant', content: fullResponse });
+        } else {
+          // Handle regular response
+          const response = await tiny.chat.completions.create(options);
+          const content = response.choices[0]?.message?.content || '';
+          updateAssistantMessage(content);
+
+          // Save assistant response to conversation
+          conversation.push(response.choices[0].message);
+
+          const timeTaken = performance.now() - startTime;
+          addLogEntry(`Response generated in ${Math.round(timeTaken)}ms`);
+        }
+
+      } catch (error) {
+        addLogEntry(`Error generating response: ${error.message}`);
+        updateAssistantMessage(`Error: ${error.message}`);
+
+        // Add error to conversation
+        conversation.push({ role: 'assistant', content: `Error: ${error.message}` });
+      }
+
+      // Scroll to bottom
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Stop the current generation
+    function stopGeneration() {
+      if (isGenerating && tiny) {
+        addLogEntry('Interrupting generation...');
+        tiny.models.interrupt();
+      }
+    }
+
+    // Add a message to the chat
+    function addMessage(role, content) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${role}`;
+      messageDiv.textContent = content;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Create a placeholder for the assistant's response
+    function addAssistantMessagePlaceholder() {
+      // Create new message element
+      currentAssistantMessage = document.createElement('div');
+      currentAssistantMessage.className = 'message assistant';
+
+      // Add typing cursor
+      lastCursorElement = document.createElement('span');
+      lastCursorElement.className = 'cursor';
+      currentAssistantMessage.appendChild(lastCursorElement);
+
+      // Add to chat
+      chatMessages.appendChild(currentAssistantMessage);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Update the assistant message with new content
+    function updateAssistantMessage(content) {
+      if (!currentAssistantMessage) return;
+
+      // Remove previous cursor
+      if (lastCursorElement) {
+        lastCursorElement.remove();
+      }
+
+      // Append new content
+      const contentNode = document.createTextNode(content);
+      currentAssistantMessage.appendChild(contentNode);
+
+      // Add cursor again
+      lastCursorElement = document.createElement('span');
+      lastCursorElement.className = 'cursor';
+      currentAssistantMessage.appendChild(lastCursorElement);
+
+      // Scroll to bottom
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Add an entry to the log panel
+    function addLogEntry(message) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logPanel.appendChild(entry);
+      logPanel.scrollTop = logPanel.scrollHeight;
+    }
+
+    // Disable interface during loading/processing
+    function disableInterface(loading) {
+      userInput.disabled = true;
+      sendBtn.disabled = true;
+
+      if (loading) {
+        modelSelect.disabled = true;
+        loadModelBtn.disabled = true;
+      } else {
+        modelSelect.disabled = false;
+        loadModelBtn.disabled = false;
+      }
+
+      unloadModelBtn.disabled = true;
+    }
+
+    // Enable interface after model is loaded
+    function enableInterface() {
+      userInput.disabled = false;
+      sendBtn.disabled = false;
+      modelSelect.disabled = false;
+      loadModelBtn.disabled = false;
+      unloadModelBtn.disabled = false;
+    }
+
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+
+</html>
