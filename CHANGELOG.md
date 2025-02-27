@@ -1,5 +1,11 @@
 # tinylm
 
+## 0.0.5
+
+### Patch Changes
+
+- adcbe59: swap text streamer
+
 ## 0.0.4
 
 ### Patch Changes
