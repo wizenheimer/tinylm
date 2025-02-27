@@ -1,5 +1,11 @@
 # tinylm
 
+## 0.0.4
+
+### Patch Changes
+
+- 45890c2: add cross platform streaming
+
 ## 0.0.3
 
 ### Patch Changes
