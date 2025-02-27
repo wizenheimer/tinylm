@@ -16,6 +16,7 @@ export { ProgressTracker } from './ProgressTracker';
 export { FileProgressTracker } from './FileProgressTracker';
 export { WebGPUChecker } from './WebGPUChecker';
 export { GenerationController, InterruptableStoppingCriteria } from './GenerationController';
+export { createStreamer } from './TextStreamHandler';
 
 // Export type definitions
 export type {

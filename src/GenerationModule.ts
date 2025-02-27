@@ -7,13 +7,13 @@ import {
   AutoTokenizer,
   AutoModelForCausalLM,
   PreTrainedTokenizer,
-  PreTrainedModel,
-  TextStreamer
+  PreTrainedModel
 } from "@huggingface/transformers";
 
 import { BaseModule } from './BaseModule';
 import { GenerationController } from './GenerationController';
 import { FileProgressTracker } from './FileProgressTracker';
+import { createStreamer } from './TextStreamHandler';
 import {
   ModelRegistryEntry,
   TokenizedInputs,
@@ -565,11 +565,9 @@ export class GenerationModule extends BaseModule {
     try {
       const startTime = performance.now();
 
-      // Import TextStreamer
-      const streamer = new TextStreamer(this.tokenizer!, {
-        skip_prompt: true,
-        skip_special_tokens: true
-      });
+      if (!this.tokenizer) {
+        throw new Error("Tokenizer is not initialized");
+      }
 
       this.progressTracker.update({
         status: 'generating',
@@ -577,13 +575,10 @@ export class GenerationModule extends BaseModule {
         message: `Generating streaming response with model: ${this.activeModel}`
       });
 
-      // Set up cross-platform streaming using an event-based approach
-      // This works in both browser and Node.js environments
+      // Create a queue to store generated text chunks
       const textQueue: string[] = [];
       let queueResolve: ((value: string | null) => void) | null = null;
       let generationComplete = false;
-      let hasError = false;
-      let errorMessage = '';
 
       // Function to wait for the next chunk
       const waitForChunk = (): Promise<string | null> => {
@@ -595,18 +590,13 @@ export class GenerationModule extends BaseModule {
           return Promise.resolve(null);
         }
 
-        if (hasError) {
-          throw new Error(errorMessage);
-        }
-
-        return new Promise<string | null>((resolve, reject) => {
+        return new Promise<string | null>(resolve => {
           queueResolve = resolve;
         });
       };
 
-      // Override the callback function to add to the queue
-      const originalCallback = streamer.callback_function;
-      streamer.callback_function = (text: string) => {
+      // Create a callback for text chunks
+      const textCallback = (text: string) => {
         if (text) {
           if (queueResolve) {
             queueResolve(text);
@@ -615,20 +605,23 @@ export class GenerationModule extends BaseModule {
             textQueue.push(text);
           }
         }
-
-        if (originalCallback) {
-          originalCallback(text);
-        }
       };
 
+      // Create a streamer using our wrapper function
+      const streamer = await createStreamer(this.tokenizer, {
+        skip_prompt: true,
+        skip_special_tokens: true,
+        callback: textCallback
+      });
+
       // Start the generation in the background
-      const generatePromise = this.model!.generate(({
+      const generatePromise = this.model!.generate({
         ...inputs,
         past_key_values: this.controller.getPastKeyValues(),
         stopping_criteria: this.controller.getStoppingCriteria(),
         streamer,
         ...params
-      } as unknown) as Record<string, any>).then((output: Record<string, any>) => {
+      } as any).then((output: any) => {
         // Save for potential continuation
         if (output && output.past_key_values) {
           this.controller.setPastKeyValues(output.past_key_values);
@@ -639,77 +632,18 @@ export class GenerationModule extends BaseModule {
         if (queueResolve) {
           queueResolve(null);
         }
-      }).catch(error => {
+      }).catch((error: any) => {
+        console.error("Generation error:", error);
         generationComplete = true;
-        hasError = true;
-        errorMessage = error instanceof Error ? error.message : String(error);
-
-        // Resolve any pending waiters to trigger error handling
         if (queueResolve) {
           queueResolve(null);
         }
+        throw error;
       });
 
       // Stream text chunks as they become available
-      try {
-        let chunk: string | null;
-        while ((chunk = await waitForChunk()) !== null) {
-          yield {
-            id: completionId,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model: this.activeModel!,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  content: chunk
-                },
-                finish_reason: null
-              }
-            ]
-          };
-        }
-
-        // Check if there was an error during generation
-        if (hasError) {
-          throw new Error(errorMessage);
-        }
-
-        // Ensure generation is complete
-        await generatePromise;
-
-        // Final chunk with finish reason
-        yield {
-          id: completionId,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: this.activeModel!,
-          choices: [
-            {
-              index: 0,
-              delta: {},
-              finish_reason: 'stop'
-            }
-          ]
-        };
-
-        const totalTime = (performance.now() - startTime) / 1000;
-        this.progressTracker.update({
-          status: 'complete',
-          type: 'generation',
-          message: `Generation complete (${totalTime.toFixed(2)}s)`
-        });
-      } catch (error) {
-        // This will catch errors from both the generation process and the streaming process
-        const errMsg = error instanceof Error ? error.message : String(error);
-        this.progressTracker.update({
-          status: 'error',
-          type: 'generation',
-          message: `Streaming error: ${errMsg}`
-        });
-
-        // Yield error chunk
+      let chunk: string | null;
+      while ((chunk = await waitForChunk()) !== null) {
         yield {
           id: completionId,
           object: 'chat.completion.chunk',
@@ -719,20 +653,45 @@ export class GenerationModule extends BaseModule {
             {
               index: 0,
               delta: {
-                content: `\n[Error: ${errMsg}]`
+                content: chunk
               },
-              finish_reason: 'error'
+              finish_reason: null
             }
           ]
         };
       }
+
+      // Ensure generation is complete
+      await generatePromise;
+
+      // Final chunk with finish reason
+      yield {
+        id: completionId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: this.activeModel!,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: 'stop'
+          }
+        ]
+      };
+
+      const totalTime = (performance.now() - startTime) / 1000;
+      this.progressTracker.update({
+        status: 'complete',
+        type: 'generation',
+        message: `Generation complete (${totalTime.toFixed(2)}s)`
+      });
+
     } catch (error) {
-      // Catch any errors that might occur during the initial setup
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.progressTracker.update({
         status: 'error',
         type: 'generation',
-        message: `Streaming setup error: ${errorMessage}`
+        message: `Streaming error: ${errorMessage}`
       });
 
       // Yield error chunk
@@ -745,7 +704,7 @@ export class GenerationModule extends BaseModule {
           {
             index: 0,
             delta: {
-              content: `\n[Setup Error: ${errorMessage}]`
+              content: `\n[Error: ${errorMessage}]`
             },
             finish_reason: 'error'
           }

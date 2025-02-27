@@ -1013,7 +1013,7 @@
           messages,
           temperature: parseFloat(temperatureInput.value),
           max_tokens: parseInt(maxTokensInput.value),
-          stream: false  // Disable streaming for now
+          stream: true  // Enable streaming for now
         };
 
         addLogEntry(`Generating response with temperature ${options.temperature} and max_tokens ${options.max_tokens}`);
