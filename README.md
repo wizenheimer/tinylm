@@ -443,6 +443,75 @@ const response = await tiny.chat.completions.create({
 });
 ```
 
+## Roadmap
+
+### Text to Speech
+
+```javascript
+import fs from "fs";
+import path from "path";
+import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+const speechFile = path.resolve("./speech.mp3");
+
+const mp3 = await tiny.audio.speech.create({
+  model: "tts-model",
+  voice: "alloy",
+  input: "Today is a wonderful day to build something people love!",
+});
+
+const buffer = Buffer.from(await mp3.arrayBuffer());
+await fs.promises.writeFile(speechFile, buffer);
+```
+
+### Speech to Text
+
+```javascript
+import fs from "fs";
+import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+
+const transcription = await tiny.audio.transcriptions.create({
+  file: fs.createReadStream("/path/to/file/audio.mp3"),
+  model: "whisper-model",
+});
+
+console.log(transcription.text);
+```
+
+### Text Embeddings
+
+```javascript
+import { TinyLM } from "tinylm";
+const tiny = new TinyLM();
+
+const embedding = await tiny.embeddings.create({
+  model: "embedding-model",
+  input: "Your text string goes here",
+  encoding_format: "float",
+});
+
+console.log(embedding);
+```
+
+### Image Generation
+
+```javascript
+import { TinyLM } from "tinylm";
+const tiny = new TinyLM();
+
+const response = await tiny.images.generate({
+  model: "image-model",
+  prompt: "a white siamese cat",
+  n: 1,
+  size: "1024x1024",
+});
+
+console.log(response.data[0].url);
+```
+
 ## License
 
 MIT
