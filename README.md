@@ -1,6 +1,6 @@
 <div align="center">
   <h1> TinyLM </h1>
-  <p> Zero-cost OpenAI-compliant inference on the edge </p>
+  <p> Zero-cost client-side inference | OpenAI-compliant | NodeJS | Chromium </p>
   <p>
     <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples »</strong></a>
   </p>
