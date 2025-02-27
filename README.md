@@ -2,7 +2,7 @@
   <h1> TinyLM </h1>
   <p> Zero-cost OpenAI-compliant inference on the edge </p>
   <p>
-    <a href="https://github.com/wizenheimer/byrd/tree/main/backend/docs/api"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples »</strong></a>
   </p>
 </div>
 
@@ -14,7 +14,9 @@
 ## Features
 
 - **OpenAI-compatible API** - Simple drop-in alternative for OpenAI client libraries
-- **Client-side Infetence** - Run zero-cost inference client side using webgpu
+- **Client-side Inference** - Run zero-cost inference client side using WebGPU
+- **Text Generation** - Generate high-quality text with controllable parameters
+- **Text Embeddings** - Create semantic embeddings for search, clustering, and similarity
 - **WebGPU Acceleration** - Automatic detection and use of WebGPU when available
 - **Cross-Platform** - Works in both browser and Node.js environments
 - **True Streaming** - Real-time token streaming with low latency
@@ -33,7 +35,7 @@ yarn add tinylm
 
 ## Basic Usage
 
-### Quick Start
+### Quick Start - Text Generation
 
 ```javascript
 import { TinyLM } from "tinylm";
@@ -57,6 +59,38 @@ const response = await tiny.chat.completions.create({
 });
 
 console.log(response.choices[0].message.content);
+```
+
+### Text Embeddings Example
+
+```javascript
+import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+await tiny.init({
+  embeddingModels: ["nomic-ai/nomic-embed-text-v1.5"],
+});
+
+// Generate embeddings for text
+const embedding = await tiny.embeddings.create({
+  model: "nomic-ai/nomic-embed-text-v1.5",
+  input: "Your text string goes here",
+});
+
+console.log(`Embedding dimensions: ${embedding.data[0].embedding.length}`);
+console.log(`Token usage: ${embedding.usage.prompt_tokens} tokens`);
+
+// Generate embeddings for multiple texts at once
+const batchEmbeddings = await tiny.embeddings.create({
+  model: "nomic-ai/nomic-embed-text-v1.5",
+  input: [
+    "First document to embed",
+    "Second document to embed",
+    "Third document with different content",
+  ],
+});
+
+console.log(`Generated ${batchEmbeddings.data.length} embeddings`);
 ```
 
 ### Streaming Example
@@ -110,10 +144,13 @@ Initialize TinyLM with optional model preloading.
 
 ```javascript
 await tiny.init({
-  models: ["HuggingFaceTB/SmolLM2-135M-Instruct"], // Models to preload
+  models: ["HuggingFaceTB/SmolLM2-135M-Instruct"], // Text generation models to preload
+  embeddingModels: ["Xenova/all-MiniLM-L6-v2"], // Embedding models to preload
   lazyLoad: true, // Don't load models immediately (default: false)
 });
 ```
+
+### Chat Completions API
 
 #### `chat.completions.create(options)`
 
@@ -140,6 +177,46 @@ Returns:
 - When `stream: false`: A completion result object
 - When `stream: true`: An async generator yielding completion chunks
 
+### Embeddings API
+
+#### `embeddings.create(options)`
+
+Generate embeddings for text with an OpenAI-compatible interface.
+
+```javascript
+const embeddings = await tiny.embeddings.create({
+  model: "Xenova/all-MiniLM-L6-v2", // Embedding model to use
+  input: "Your text string goes here", // Single string or array of strings
+  encoding_format: "float", // 'float' (default) or 'base64'
+  dimensions: 384, // Optional: specify desired dimensions
+});
+```
+
+Returns:
+
+An object with the following structure:
+
+```javascript
+{
+  object: "list",
+  data: [
+    {
+      object: "embedding",
+      embedding: [...], // Vector of floats or base64 string
+      index: 0
+    },
+    // More items if batch input
+  ],
+  model: "Xenova/all-MiniLM-L6-v2",
+  usage: {
+    prompt_tokens: 5,
+    total_tokens: 5
+  }
+}
+```
+
+### Model Management API
+
 #### `models.load(options)`
 
 Load a model for use.
@@ -159,6 +236,15 @@ Unload a model to free memory.
 await tiny.models.offload({
   model: "HuggingFaceTB/SmolLM2-135M-Instruct",
 });
+```
+
+#### `models.list()`
+
+List all currently loaded models.
+
+```javascript
+const loadedModels = tiny.models.list();
+console.log("Loaded models:", loadedModels);
 ```
 
 #### `models.check()`
@@ -188,6 +274,86 @@ tiny.models.reset();
 ```
 
 ## Advanced Examples
+
+### Embeddings for Semantic Search
+
+```javascript
+import { TinyLM } from "tinylm";
+
+// Create TinyLM instance
+const tiny = new TinyLM();
+await tiny.init();
+
+// Set up a document collection
+const documents = [
+  "Artificial intelligence is rapidly transforming technology",
+  "Machine learning models require large datasets to train properly",
+  "Neural networks are loosely inspired by the human brain",
+  "The climate crisis requires immediate global action",
+  "Renewable energy sources are crucial for sustainability",
+  "Good programming practices improve code maintainability",
+];
+
+// Function to calculate cosine similarity
+function cosineSimilarity(a, b) {
+  let dotProduct = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+  }
+  return dotProduct; // Vectors are already normalized
+}
+
+// Index the documents by generating embeddings
+console.log("Generating embeddings for documents...");
+const documentsEmbeddings = await tiny.embeddings.create({
+  model: "Xenova/all-MiniLM-L6-v2",
+  input: documents,
+});
+
+const documentVectors = documentsEmbeddings.data.map((d) => d.embedding);
+
+// Create a search function
+async function semanticSearch(query, topK = 2) {
+  // Generate embedding for the query
+  const queryEmbedding = await tiny.embeddings.create({
+    model: "Xenova/all-MiniLM-L6-v2",
+    input: query,
+  });
+
+  const queryVector = queryEmbedding.data[0].embedding;
+
+  // Compare to all documents
+  const similarities = documentVectors.map((docVector, i) => {
+    return {
+      document: documents[i],
+      score: cosineSimilarity(queryVector, docVector),
+    };
+  });
+
+  // Sort by similarity (descending)
+  similarities.sort((a, b) => b.score - a.score);
+
+  // Return top K results
+  return similarities.slice(0, topK);
+}
+
+// Search examples
+const queries = [
+  "How does AI work?",
+  "Tell me about climate change",
+  "What makes code better?",
+];
+
+for (const query of queries) {
+  const results = await semanticSearch(query);
+  console.log(`\nResults for query: "${query}"`);
+  results.forEach((match, i) => {
+    console.log(
+      `${i + 1}. ${match.document} (score: ${match.score.toFixed(3)})`
+    );
+  });
+}
+```
 
 ### Progress Tracking
 
@@ -280,7 +446,12 @@ tiny.models.reset();
 TinyLM is written in TypeScript and exports all necessary type definitions. Here's an example using TypeScript:
 
 ```typescript
-import { TinyLM, ProgressUpdate, CompletionChunk } from "tinylm";
+import {
+  TinyLM,
+  ProgressUpdate,
+  CompletionChunk,
+  EmbeddingResult,
+} from "tinylm";
 
 // Type guard to check if an object is an AsyncGenerator
 function isAsyncGenerator(obj: any): obj is AsyncGenerator<CompletionChunk> {
@@ -295,6 +466,8 @@ async function main() {
   });
 
   await tiny.init();
+
+  // Text generation example
   await tiny.models.load({ model: "HuggingFaceTB/SmolLM2-135M-Instruct" });
 
   const result = await tiny.chat.completions.create({
@@ -310,6 +483,16 @@ async function main() {
       process.stdout.write(chunk.choices[0]?.delta?.content || "");
     }
   }
+
+  // Embeddings example
+  const embedding: EmbeddingResult = await tiny.embeddings.create({
+    model: "Xenova/all-MiniLM-L6-v2",
+    input: "This is a sample text for embedding",
+  });
+
+  console.log(
+    `Generated embedding with ${embedding.data[0].embedding.length} dimensions`
+  );
 }
 
 main().catch(console.error);
@@ -324,34 +507,126 @@ TinyLM works in browsers without modification. Here's an example using browser A
 <html>
   <head>
     <title>TinyLM Browser Demo</title>
+    <style>
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .tab-buttons {
+        display: flex;
+        margin-bottom: 20px;
+      }
+      .tab-button {
+        padding: 10px 20px;
+        cursor: pointer;
+        background: #eee;
+        border: none;
+        margin-right: 5px;
+      }
+      .tab-button.active {
+        background: #007bff;
+        color: white;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      textarea {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      #progressBar {
+        height: 20px;
+        background-color: #f0f0f0;
+        border-radius: 5px;
+        margin-bottom: 10px;
+      }
+      #progressBarFill {
+        height: 100%;
+        background-color: #4caf50;
+        border-radius: 5px;
+        width: 0%;
+        transition: width 0.3s;
+      }
+    </style>
   </head>
   <body>
-    <div>
-      <h2>TinyLM Demo</h2>
-      <div id="status">Loading...</div>
-      <div id="progress"></div>
-      <textarea id="prompt" rows="4" cols="50">
+    <div class="container">
+      <h1>TinyLM Browser Demo</h1>
+      <div id="status">Loading TinyLM...</div>
+
+      <div id="progressBar"><div id="progressBarFill"></div></div>
+
+      <div class="tab-buttons">
+        <button class="tab-button active" data-tab="generation">
+          Text Generation
+        </button>
+        <button class="tab-button" data-tab="embeddings">Embeddings</button>
+      </div>
+
+      <div class="tab-content active" id="generation-tab">
+        <h2>Text Generation</h2>
+        <textarea id="prompt" rows="4" placeholder="Enter your prompt here...">
 What are large language models?</textarea
-      >
-      <button id="generate">Generate</button>
-      <div id="result"></div>
+        >
+        <button id="generate">Generate</button>
+        <div id="result"></div>
+      </div>
+
+      <div class="tab-content" id="embeddings-tab">
+        <h2>Text Embeddings</h2>
+        <textarea id="embedText" rows="4" placeholder="Enter text to embed...">
+This is a sample text for generating embeddings.</textarea
+        >
+        <button id="embed">Generate Embedding</button>
+        <div id="embedResult"></div>
+      </div>
     </div>
 
     <script type="module">
       import { TinyLM } from "https://unpkg.com/tinylm/dist/tinylm.esm.js";
 
       const statusEl = document.getElementById("status");
-      const progressEl = document.getElementById("progress");
+      const progressBarFill = document.getElementById("progressBarFill");
+
+      // Generation elements
       const promptEl = document.getElementById("prompt");
       const generateBtn = document.getElementById("generate");
       const resultEl = document.getElementById("result");
+
+      // Embedding elements
+      const embedTextEl = document.getElementById("embedText");
+      const embedBtn = document.getElementById("embed");
+      const embedResultEl = document.getElementById("embedResult");
+
+      // Tab functionality
+      document.querySelectorAll(".tab-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          // Remove active class from all buttons and tabs
+          document
+            .querySelectorAll(".tab-button")
+            .forEach((b) => b.classList.remove("active"));
+          document
+            .querySelectorAll(".tab-content")
+            .forEach((t) => t.classList.remove("active"));
+
+          // Add active class to clicked button and corresponding tab
+          button.classList.add("active");
+          document
+            .getElementById(`${button.dataset.tab}-tab`)
+            .classList.add("active");
+        });
+      });
 
       // Create TinyLM instance with progress tracking
       const tiny = new TinyLM({
         progressCallback: (progress) => {
           statusEl.textContent = progress.message || progress.status;
           if (typeof progress.percentComplete === "number") {
-            progressEl.textContent = `${progress.percentComplete}%`;
+            progressBarFill.style.width = `${progress.percentComplete}%`;
           }
         },
       });
@@ -367,17 +642,16 @@ What are large language models?</textarea
           capabilities.isWebGPUSupported ? "Available" : "Not available"
         }`;
 
-        // Load model
+        // Text Generation
         generateBtn.addEventListener("click", async () => {
           resultEl.textContent = "Loading model and generating...";
+          progressBarFill.style.width = "0%";
 
           try {
             // Load model if not already loaded
-            if (!tiny.activeModel) {
-              await tiny.models.load({
-                model: "HuggingFaceTB/SmolLM2-135M-Instruct",
-              });
-            }
+            await tiny.models.load({
+              model: "HuggingFaceTB/SmolLM2-135M-Instruct",
+            });
 
             // Generate completion
             const stream = await tiny.chat.completions.create({
@@ -398,6 +672,37 @@ What are large language models?</textarea
             }
           } catch (error) {
             resultEl.textContent = `Error: ${error.message}`;
+          }
+        });
+
+        // Text Embeddings
+        embedBtn.addEventListener("click", async () => {
+          embedResultEl.textContent = "Generating embedding...";
+          progressBarFill.style.width = "0%";
+
+          try {
+            const embedding = await tiny.embeddings.create({
+              model: "Xenova/all-MiniLM-L6-v2",
+              input: embedTextEl.value,
+            });
+
+            const vector = embedding.data[0].embedding;
+            const dimensions = vector.length;
+
+            // Show results
+            embedResultEl.innerHTML = `
+              <p>Generated ${dimensions}-dimensional embedding vector.</p>
+              <p>Token usage: ${embedding.usage.prompt_tokens} tokens</p>
+              <details>
+                <summary>Show vector (first 10 dimensions)</summary>
+                <pre>[${vector
+                  .slice(0, 10)
+                  .map((v) => v.toFixed(6))
+                  .join(", ")}${dimensions > 10 ? ", ..." : ""}]</pre>
+              </details>
+            `;
+          } catch (error) {
+            embedResultEl.textContent = `Error: ${error.message}`;
           }
         });
       })();
@@ -479,21 +784,6 @@ const transcription = await tiny.audio.transcriptions.create({
 });
 
 console.log(transcription.text);
-```
-
-### Text Embeddings
-
-```javascript
-import { TinyLM } from "tinylm";
-const tiny = new TinyLM();
-
-const embedding = await tiny.embeddings.create({
-  model: "embedding-model",
-  input: "Your text string goes here",
-  encoding_format: "float",
-});
-
-console.log(embedding);
 ```
 
 ### Image Generation
