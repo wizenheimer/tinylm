@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tinylm - Run Models Locally with WebGPU</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: monospace;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      color: #333;
+    }
+
+    pre {
+      background: #f8f8f8;
+      padding: 1.5rem;
+      overflow-x: auto;
+      border-radius: 4px;
+      margin: 1.5rem 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      background: #f5f5f5;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    h1,
+    h2 {
+      border-bottom: 1px solid #eee;
+      padding-bottom: 0.3rem;
+    }
+
+    .header {
+      margin-bottom: 2rem;
+    }
+
+    .header-button {
+      color: #333;
+      text-decoration: none;
+      border: 1px solid #333;
+      padding: 0.5rem 1rem;
+      display: inline-block;
+      margin-top: 1rem;
+    }
+
+    .header-button:hover {
+      background: #333;
+      color: #fff;
+    }
+
+    .header-button.inverse {
+      background: #333;
+      color: #fff;
+    }
+
+    .header-button.inverse:hover {
+      background: #fff;
+      color: #333;
+    }
+
+    /* Override some Prism styles to match your design */
+    pre[class*="language-"] {
+      background: #f5f5f5;
+      margin: 0;
+      border: 1px solid #ddd;
+    }
+
+    code[class*="language-"] {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+    }
+
+    /* Grayscale theme for Prism */
+    code[class*="language-"],
+    pre[class*="language-"] {
+      color: #383a42;
+      text-shadow: none;
+    }
+
+    .token.comment,
+    .token.prolog,
+    .token.doctype,
+    .token.cdata {
+      color: #a0a1a7;
+      font-style: italic;
+    }
+
+    .token.function,
+    .token.keyword {
+      color: #a626a4;
+      font-weight: normal;
+    }
+
+    .token.string {
+      color: #50a14f;
+    }
+
+    .token.number {
+      color: #986801;
+      font-weight: normal;
+    }
+
+    .token.property {
+      color: #e45649;
+    }
+
+    .token.punctuation {
+      color: #383a42;
+    }
+
+    .token.operator {
+      color: #0184bc;
+      font-weight: normal;
+    }
+
+    .token.constant {
+      color: #986801;
+      font-weight: normal;
+    }
+
+    .token.url {
+      color: #4078f2;
+      text-decoration: underline;
+    }
+
+    code {
+      font-size: 12px;
+    }
+
+    /* Style for bash/shell commands */
+    .language-bash .token.operator,
+    .language-bash .token.parameter {
+      color: #e45649;
+    }
+
+    .language-bash .token.function {
+      color: #4078f2;
+      font-weight: normal;
+    }
+
+    /* Update the -H and -d parameter colors */
+    .token.parameter {
+      color: #986801;
+    }
+
+    /* Style for JSON content */
+    .language-json .token.property {
+      color: #e45649;
+    }
+
+    .language-json .token.string {
+      color: #50a14f;
+    }
+
+    .language-json .token.number {
+      color: #986801;
+    }
+
+    /* Adjust spacing in code blocks */
+    pre code {
+      font-family: Monaco, Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* Remove padding from code elements inside pre */
+    pre code.language-bash,
+    pre code.language-json {
+      padding: 0;
+      background: transparent;
+    }
+
+    /* Override Prism styles */
+    code[class*="language-"],
+    pre[class*="language-"] {
+      text-shadow: none;
+      font-family: Monaco, Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* Collapsible sections styling */
+    details {
+      margin: 1rem 0;
+      padding: 0.5rem;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+
+    details summary {
+      cursor: pointer;
+      padding: 0.5rem;
+      font-weight: bold;
+    }
+
+    details summary:hover {
+      background: #f5f5f5;
+    }
+
+    details[open] summary {
+      border-bottom: 1px solid #eee;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>tinylm <span style="color: #666; font-size: 0.5em; font-weight: normal;">(pronounced "tin-ee-el-em")</span>
+    </h1>
+    <p>Run language models locally in browser and Node.js with WebGPU acceleration</p>
+    <div style="display: flex; gap: 1rem;">
+      <a href="https://github.com/wizenheimer/tinylm" class="header-button">View on GitHub</a>
+      <a href="https://www.npmjs.com/package/tinylm" target="_blank" class="header-button inverse">Try on NPM →</a>
+    </div>
+  </div>
+
+  <h2>Why tinylm?</h2>
+  <p>
+    tinylm provides an OpenAI-compatible API for running language models directly in your browser or Node.js
+    application using WebGPU acceleration. No server required, zero-cost inference, and complete privacy with
+    client-side processing.
+  </p>
+  <h2>Features</h2>
+  <ul>
+    <li>
+      <strong>OpenAI-compatible API</strong> - Simple drop-in alternative for OpenAI client libraries
+    </li>
+    <li>
+      <strong>Client-side Inference</strong> - Run zero-cost inference client side using WebGPU
+    </li>
+    <li>
+      <strong>Text Generation</strong> - Generate high-quality text with controllable parameters
+    </li>
+    <li>
+      <strong>Text Embeddings</strong> - Create semantic embeddings for search, clustering, and similarity
+    </li>
+    <li>
+      <strong>WebGPU Acceleration</strong> - Automatic detection and use of WebGPU when available
+    </li>
+    <li>
+      <strong>Cross-Platform</strong> - Works in both browser and Node.js environments
+    </li>
+    <li>
+      <strong>True Streaming</strong> - Real-time token streaming with low latency
+    </li>
+    <li>
+      <strong>Detailed Progress Tracking</strong> - Per-file download tracking with ETA and speed metrics
+    </li>
+  </ul>
+
+  <h2>Quick Start</h2>
+  <h3>Installation</h3>
+  <pre><code class="language-bash">npm install tinylm
+# or
+yarn add tinylm</code></pre>
+
+  <h3>Text Generation Example</h3>
+  <pre><code class="language-javascript">import { TinyLM } from "tinylm";
+
+// Create a TinyLM instance
+const tiny = new TinyLM();
+
+// Initialize and load a model
+await tiny.init({
+  models: ["HuggingFaceTB/SmolLM2-135M-Instruct"],
+});
+
+// Generate a completion
+const response = await tiny.chat.completions.create({
+  messages: [
+    { role: "system", content: "You are a helpful AI assistant." },
+    { role: "user", content: "What is artificial intelligence?" },
+  ],
+  temperature: 0.7,
+  max_tokens: 100,
+});
+
+console.log(response.choices[0].message.content);</code></pre>
+  <p style="color: #888; font-size: 12px; margin: 0.5rem 0 1.5rem;">
+    ↑ This example demonstrates basic text generation with tinylm.
+  </p>
+
+  <h3>Text Embeddings Example</h3>
+  <pre><code class="language-javascript">import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+await tiny.init({
+  embeddingModels: ["nomic-ai/nomic-embed-text-v1.5"],
+});
+
+// Generate embeddings for text
+const embedding = await tiny.embeddings.create({
+  model: "nomic-ai/nomic-embed-text-v1.5",
+  input: "Your text string goes here",
+});
+
+console.log(`Embedding dimensions: ${embedding.data[0].embedding.length}`);
+console.log(`Token usage: ${embedding.usage.prompt_tokens} tokens`);</code></pre>
+  <p style="color: #888; font-size: 12px; margin: 0.5rem 0 1.5rem;">
+    ↑ Generate embeddings locally for semantic search and other applications.
+  </p>
+
+  <h2>Recipes</h2>
+  <details>
+    <summary>Streaming Example</summary>
+    <pre><code class="language-javascript">import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+await tiny.init();
+await tiny.models.load({ model: "HuggingFaceTB/SmolLM2-135M-Instruct" });
+
+// Generate a streaming response
+const stream = await tiny.chat.completions.create({
+  messages: [
+    { role: "system", content: "You are a creative storyteller." },
+    { role: "user", content: "Write a short poem about technology." },
+  ],
+  temperature: 0.9,
+  max_tokens: 200,
+  stream: true, // Enable streaming
+});
+
+// Process the stream
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content || "";
+  process.stdout.write(content); // Display content as it arrives
+}</code></pre>
+  </details>
+
+  <details>
+    <summary>Progress Tracking</summary>
+    <pre><code class="language-javascript">import { TinyLM } from "tinylm";
+
+// Format bytes to human-readable size
+function formatBytes(bytes) {
+  if (bytes === 0 || !bytes) return "0 B";
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+// Create TinyLM with detailed progress tracking
+const tiny = new TinyLM({
+  progressCallback: (progress) => {
+    if (progress.type === "model" && progress.overall) {
+      const { bytesLoaded, bytesTotal, percentComplete, speed } =
+        progress.overall;
+      console.log(
+        `Loading model: ${percentComplete}% - ` +
+          `${formatBytes(bytesLoaded)}/${formatBytes(bytesTotal)} ` +
+          `at ${formatBytes(speed)}/s`
+      );
+
+      // Log individual file progress
+      if (progress.files && progress.files.length > 0) {
+        const activeFiles = progress.files.filter((f) => f.status !== "done");
+        if (activeFiles.length > 0) {
+          console.log(`Active downloads: ${activeFiles.length}`);
+          activeFiles.forEach((file) => {
+            console.log(`  ${file.name}: ${file.percentComplete}%`);
+          });
+        }
+      }
+    }
+  },
+});
+
+await tiny.init();
+await tiny.models.load({ model: "HuggingFaceTB/SmolLM2-135M-Instruct" });</code></pre>
+  </details>
+
+  <details>
+    <summary>Embeddings for Semantic Search</summary>
+    <pre><code class="language-javascript">import { TinyLM } from "tinylm";
+
+// Create TinyLM instance
+const tiny = new TinyLM();
+await tiny.init();
+
+// Set up a document collection
+const documents = [
+  "Artificial intelligence is rapidly transforming technology",
+  "Machine learning models require large datasets to train properly",
+  "Neural networks are loosely inspired by the human brain",
+  "The climate crisis requires immediate global action",
+  "Renewable energy sources are crucial for sustainability",
+  "Good programming practices improve code maintainability",
+];
+
+// Function to calculate cosine similarity
+function cosineSimilarity(a, b) {
+  let dotProduct = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+  }
+  return dotProduct; // Vectors are already normalized
+}
+
+// Index the documents by generating embeddings
+console.log("Generating embeddings for documents...");
+const documentsEmbeddings = await tiny.embeddings.create({
+  model: "Xenova/all-MiniLM-L6-v2",
+  input: documents,
+});
+
+const documentVectors = documentsEmbeddings.data.map((d) => d.embedding);
+
+// Create a search function
+async function semanticSearch(query, topK = 2) {
+  // Generate embedding for the query
+  const queryEmbedding = await tiny.embeddings.create({
+    model: "Xenova/all-MiniLM-L6-v2",
+    input: query,
+  });
+
+  const queryVector = queryEmbedding.data[0].embedding;
+
+  // Compare to all documents
+  const similarities = documentVectors.map((docVector, i) => {
+    return {
+      document: documents[i],
+      score: cosineSimilarity(queryVector, docVector),
+    };
+  });
+
+  // Sort by similarity (descending)
+  similarities.sort((a, b) => b.score - a.score);
+
+  // Return top K results
+  return similarities.slice(0, topK);
+}</code></pre>
+  </details>
+
+  <h2>Documentation</h2>
+  <h3>API Reference</h3>
+  <h4>TinyLM Class</h4>
+  <ul>
+    <li><code>constructor(options)</code>: Create a new TinyLM instance
+      <ul>
+        <li><code>progressCallback</code>: Function called with progress updates</li>
+        <li><code>progressThrottleTime</code>: Milliseconds between progress updates (default: 100)</li>
+      </ul>
+    </li>
+    <li><code>init(options)</code>: Initialize TinyLM with optional model preloading
+      <ul>
+        <li><code>models</code>: Text generation models to preload</li>
+        <li><code>embeddingModels</code>: Embedding models to preload</li>
+        <li><code>lazyLoad</code>: Don't load models immediately (default: false)</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h4>Chat Completions API</h4>
+  <ul>
+    <li><code>chat.completions.create(options)</code>: Generate text completions with an OpenAI-compatible interface
+      <ul>
+        <li><code>messages</code>: Array of message objects</li>
+        <li><code>model</code>: Optional if already loaded</li>
+        <li><code>temperature</code>: Controls randomness (0-1)</li>
+        <li><code>max_tokens</code>: Maximum tokens to generate</li>
+        <li><code>stream</code>: Set to true for streaming</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h4>Embeddings API</h4>
+  <ul>
+    <li><code>embeddings.create(options)</code>: Generate embeddings for text with an OpenAI-compatible interface
+      <ul>
+        <li><code>model</code>: Embedding model to use</li>
+        <li><code>input</code>: Single string or array of strings</li>
+        <li><code>encoding_format</code>: 'float' (default) or 'base64'</li>
+        <li><code>dimensions</code>: Optional: specify desired dimensions</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>Model Management API</h3>
+  <ul>
+    <li><code>models.load(options)</code>: Load a model for use
+      <ul>
+        <li><code>model</code>: Model identifier</li>
+        <li><code>quantization</code>: Optional quantization level</li>
+      </ul>
+    </li>
+    <li><code>models.offload(options)</code>: Unload a model to free memory</li>
+    <li><code>models.list()</code>: List all currently loaded models</li>
+    <li><code>models.check()</code>: Check hardware capabilities for WebGPU acceleration</li>
+    <li><code>models.interrupt()</code>: Interrupt an ongoing generation</li>
+    <li><code>models.reset()</code>: Reset the generation state</li>
+  </ul>
+
+  <h2>SDKs</h2>
+  <p>
+    tinylm works directly in both browser and Node.js environments with a consistent API:
+  </p>
+  <ul>
+    <li>
+      <strong>Browser:</strong> Import directly via ESM or script tag
+    </li>
+    <li>
+      <strong>Node.js:</strong> Install via npm/yarn and import normally
+    </li>
+    <li>
+      <strong>TypeScript:</strong> Full type definitions included
+    </li>
+  </ul>
+
+  <footer style="margin-top: 4rem;">
+    <p>Built by <a href="https://github.com/wizenheimer">wizenheimer</a></p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+<!-- credits: https://github.com/inferablehq/l1m/blob/main/home_page/index.html -->
+</html>
