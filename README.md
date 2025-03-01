@@ -1,8 +1,11 @@
 <div align="center">
   <h1> TinyLM </h1>
-  <p> Zero-cost client-side inference | OpenAI-compliant | NodeJS | Chromium </p>
+  <p> Browser based ML Inference </p>
+  <p> Run DeepSeek, Llama3.2, Nomic Embed and more right inside your browser </p>
   <p>
-    <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples »</strong></a>
+    <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples </strong> | </a>
+    <a href="https://github.com/wizenheimer/tinychat"><strong>TinyChat </strong> | </a>
+    <a href="https://github.com/wizenheimer/tinyembed"><strong>TinyEmbed </strong></a>
   </p>
 </div>
 
