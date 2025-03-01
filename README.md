@@ -64,6 +64,10 @@ const response = await tiny.chat.completions.create({
 console.log(response.choices[0].message.content);
 ```
 
+![TinyChat](assets/tinychat.png)
+
+Source: [Fork Me](https://github.com/wizenheimer/tinychat)
+
 ### Text Embeddings Example
 
 ```javascript
@@ -95,6 +99,10 @@ const batchEmbeddings = await tiny.embeddings.create({
 
 console.log(`Generated ${batchEmbeddings.data.length} embeddings`);
 ```
+
+![TinyEmbed](assets/tinyembed.png)
+
+Source: [Fork Me](https://github.com/wizenheimer/tinyembed)
 
 ### Streaming Example
 
