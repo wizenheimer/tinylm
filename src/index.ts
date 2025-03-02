@@ -45,6 +45,7 @@ export type {
   // Audio types
   SpeechCreateOptions,
   SpeechResult,
+  SpeechStreamResult,
 
   // Model types
   ModelLoadOptions,

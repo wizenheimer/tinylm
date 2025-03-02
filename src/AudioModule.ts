@@ -4,8 +4,10 @@
  */
 
 import { BaseModule } from './BaseModule';
-import { TTSEngine } from './TTSEngine';
-import { SpeechCreateOptions, SpeechResult } from './types';
+import { AudioChunk, TTSEngine } from './TTSEngine';
+import { SpeechCreateOptions, SpeechResult, SpeechStreamResult } from './types';
+import { splitTextIntoSentences, ensureSafeTokenLength } from './TextSplitter';
+
 
 /**
  * Audio module for TinyLM
@@ -160,15 +162,16 @@ async loadModel(options: { model: string }): Promise<boolean> {
   /**
    * Create speech from text
    * @param {SpeechCreateOptions} options - Speech creation options
-   * @returns {Promise<SpeechResult>} Speech result
+   * @returns {Promise<SpeechResult|SpeechStreamResult>} Speech result
    */
-  async createSpeech(options: SpeechCreateOptions): Promise<SpeechResult> {
+  async createSpeech(options: SpeechCreateOptions): Promise<SpeechResult | SpeechStreamResult> {
     const {
       model,
       input,
       voice = 'af',
       response_format = 'mp3',
-      speed = 1.0
+      speed = 1.0,
+      stream = false // New streaming parameter
     } = options;
 
     // Load model if specified and different from current
@@ -190,9 +193,11 @@ async loadModel(options: { model: string }): Promise<boolean> {
     try {
       const startTime = Date.now();
 
-      const audioBuffer = await this.ttsEngine.generateSpeech(input, {
+      // Generate speech with or without streaming
+      const result = await this.ttsEngine.generateSpeech(input, {
         voice,
-        speed
+        speed,
+        stream
       });
 
       const timeTaken = Date.now() - startTime;
@@ -203,17 +208,39 @@ async loadModel(options: { model: string }): Promise<boolean> {
         message: `Speech generation complete (${timeTaken}ms)`
       });
 
-      return {
-        id: `speech-${Date.now()}`,
-        object: 'audio.speech',
-        created: Math.floor(Date.now() / 1000),
-        model: this.activeModel!,
-        audio: audioBuffer,
-        content_type: response_format === 'mp3' ? 'audio/mpeg' : 'audio/wav',
-        _tinylm: {
-          time_ms: timeTaken
-        }
-      };
+      // Handle the result based on streaming mode
+      if (!stream) {
+        // Standard non-streaming mode - return single audio buffer
+        return {
+          id: `speech-${Date.now()}`,
+          object: 'audio.speech',
+          created: Math.floor(Date.now() / 1000),
+          model: this.activeModel!,
+          audio: result as ArrayBuffer,
+          content_type: response_format === 'mp3' ? 'audio/mpeg' : 'audio/wav',
+          _tinylm: {
+            time_ms: timeTaken
+          }
+        };
+      } else {
+        // Streaming mode - return array of chunks
+        const audioChunks = result as AudioChunk[];
+
+        return {
+          id: `speech-stream-${Date.now()}`,
+          object: 'audio.speech.stream',
+          created: Math.floor(Date.now() / 1000),
+          model: this.activeModel!,
+          chunks: audioChunks.map(chunk => ({
+            text: chunk.text,
+            audio: chunk.audio,
+            content_type: response_format === 'mp3' ? 'audio/mpeg' : 'audio/wav'
+          })),
+          _tinylm: {
+            time_ms: timeTaken
+          }
+        };
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.progressTracker.update({
@@ -225,6 +252,31 @@ async loadModel(options: { model: string }): Promise<boolean> {
       throw new Error(`Failed to generate speech: ${errorMessage}`);
     }
   }
+
+  /**
+   * Create a combined speech from multiple sentences
+   * @param {string} text - Full text to process
+   * @param {any} options - Generation options
+   * @returns {Promise<ArrayBuffer>} Combined audio
+   */
+  async createCombinedSpeech(text: string, options: {
+    voice?: string;
+    speed?: number;
+  } = {}): Promise<ArrayBuffer> {
+    const { voice = 'af', speed = 1.0 } = options;
+
+    // Check if a model is loaded
+    if (!this.activeModel || !this.modelRegistry.get(this.activeModel)) {
+      throw new Error('No TTS model loaded.');
+    }
+
+    // Split text into sentences
+    const sentences = splitTextIntoSentences(text);
+
+    // Generate combined speech
+    return this.ttsEngine.generateCombinedSpeech(sentences, voice, speed);
+  }
+
 
   /**
    * Offload a TTS model from memory

@@ -294,7 +294,7 @@ export interface EmbeddingResult {
 
 
 /**
- * Interface for speech creation options
+ * Interface for speech creation options with streaming
  */
 export interface SpeechCreateOptions {
   model?: string;
@@ -302,6 +302,7 @@ export interface SpeechCreateOptions {
   voice?: string;
   response_format?: 'mp3' | 'wav';
   speed?: number;
+  stream?: boolean; // New parameter for streaming
   [key: string]: any;
 }
 
@@ -315,6 +316,24 @@ export interface SpeechResult {
   model: string;
   audio: ArrayBuffer;
   content_type: string;
+  _tinylm?: {
+    time_ms: number;
+  };
+}
+
+/**
+ * Interface for streaming speech result
+ */
+export interface SpeechStreamResult {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  chunks: Array<{
+    text: string;
+    audio: ArrayBuffer;
+    content_type: string;
+  }>;
   _tinylm?: {
     time_ms: number;
   };
