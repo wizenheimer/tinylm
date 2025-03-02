@@ -79,11 +79,23 @@ export class WebGPUChecker {
    * @returns {DeviceConfig} Device configuration
    */
   getOptimalConfig(): DeviceConfig {
-    // In Node.js or without WebGPU, let Transformers.js decide
+    // In Node.js environment, always use CPU
+    const isNode = typeof process !== 'undefined' &&
+      process.versions != null &&
+      process.versions.node != null;
+
+    if (isNode) {
+      return {
+        device: "cpu",
+        dtype: "fp32"
+      };
+    }
+
+    // Without WebGPU, use CPU
     if (!this.isWebGPUSupported) {
       return {
-        device: undefined, // Let Transformers.js decide the best device
-        dtype: undefined   // Let Transformers.js decide the best dtype
+        device: "cpu",
+        dtype: "fp32"
       };
     }
 

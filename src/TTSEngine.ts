@@ -35,7 +35,7 @@ export class TTSEngine {
       this.model = await StyleTextToSpeech2Model.from_pretrained(model, {
         progress_callback: options.onProgress,
         dtype: options.dtype || "fp32",
-        device: options.device || "webgpu",
+        device: options.device || "cpu",
       });
 
       this.tokenizer = await AutoTokenizer.from_pretrained(model, {

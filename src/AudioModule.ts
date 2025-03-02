@@ -102,6 +102,9 @@ export class AudioModule extends BaseModule {
       // Get optimal config
       const config = await this.getOptimalDeviceConfig();
 
+      // For TTS models, always use CPU in Node.js environment or if WebGPU is not available
+      const device = this.isNodeEnvironment() || !capabilities.isWebGPUSupported ? "cpu" : config.device;
+
       // Initial progress message
       this.progressTracker.update({
         status: 'loading',
@@ -123,7 +126,7 @@ export class AudioModule extends BaseModule {
             ...progress
           });
         },
-        device: config.device,
+        device: device,
         dtype: config.dtype
       });
 
