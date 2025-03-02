@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TinyLM Text-to-Speech</title>
+  <title>TinyLM Voice Playground</title>
   <script type="importmap">
       {
         "imports": {
@@ -602,8 +602,8 @@
 <body>
   <div class="container">
     <header>
-      <h1>TinyLM Text-to-Speech</h1>
-      <p>Generate natural speech from text in your browser</p>
+      <h1>TinyLM Voice Playground</h1>
+      <p>Try different voices and generate natural speech in your browser</p>
     </header>
 
     <div class="card">
@@ -641,8 +641,6 @@
         <div class="progress-bar">
           <div class="progress-bar-fill" id="progress-bar"></div>
         </div>
-
-        <!-- Overall stats display -->
         <div id="overall-stats" class="overall-stats" style="display: none;">
           <div>
             <span id="loaded-size">0 B</span> / <span id="total-size">0 B</span>
@@ -651,11 +649,7 @@
             <span id="download-speed">0 B/s</span> • <span id="eta">--</span>
           </div>
         </div>
-
-        <!-- File progress container -->
-        <div id="file-progress-container" class="file-progress-container" style="display: none;">
-          <!-- File progress items will be added here dynamically -->
-        </div>
+        <div id="file-progress-container" class="file-progress-container" style="display: none;"></div>
       </div>
     </div>
 
@@ -665,7 +659,6 @@
           <label for="model-select">TTS Model</label>
           <select id="model-select">
             <option value="onnx-community/Kokoro-82M-v1.0-ONNX">Kokoro TTS</option>
-            <!-- Add other models as needed -->
           </select>
         </div>
         <div class="option-group">
@@ -683,87 +676,12 @@
 
       <div class="tab-container">
         <div class="tabs">
-          <div class="tab active" data-tab="basic-tts">Basic TTS</div>
-          <div class="tab" data-tab="voice-playground">Voice Playground</div>
-          <div class="tab" data-tab="batch-generation">Batch Generation</div>
+          <div class="tab active" data-tab="voice-playground">Voice Playground</div>
           <div class="tab" data-tab="history">History</div>
         </div>
 
-        <!-- Basic TTS Tab -->
-        <div class="tab-panel active" id="basic-tts-panel">
-          <div>
-            <label for="tts-text">Enter text to speak:</label>
-            <textarea id="tts-text" placeholder="Enter text here..." disabled></textarea>
-
-            <div class="range-slider">
-              <label for="speech-speed">
-                <span>Speed</span>
-                <span id="speed-value">1.0x</span>
-              </label>
-              <input type="range" id="speech-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
-              <div style="display: flex; justify-content: space-between; margin-top: 0.25rem;">
-                <span class="preset-btn" data-speed="0.8">Slow</span>
-                <span class="preset-btn active" data-speed="1.0">Normal</span>
-                <span class="preset-btn" data-speed="1.2">Fast</span>
-              </div>
-            </div>
-
-            <div style="margin-top: 1rem;">
-              <label for="voice-select">Voice:</label>
-              <select id="voice-select" disabled>
-                <option value="af">Default</option>
-                <option value="af_bella">Bella (Female US)</option>
-                <option value="af_nicole">Nicole (Female US)</option>
-                <option value="af_sarah">Sarah (Female US)</option>
-                <option value="af_sky">Sky (Female US)</option>
-                <option value="am_adam">Adam (Male US)</option>
-                <option value="am_michael">Michael (Male US)</option>
-                <option value="bf_emma">Emma (Female UK)</option>
-                <option value="bf_isabella">Isabella (Female UK)</option>
-                <option value="bm_george">George (Male UK)</option>
-                <option value="bm_lewis">Lewis (Male UK)</option>
-                <option value="hf_alpha">Alpha (Female Hindi)</option>
-                <option value="hf_beta">Beta (Female Hindi)</option>
-                <option value="hm_omega">Omega (Male Hindi)</option>
-                <option value="hm_psi">Psi (Male Hindi)</option>
-                <option value="ef_dora">Dora (Female Spanish)</option>
-                <option value="em_alex">Alex (Male Spanish)</option>
-                <option value="em_santa">Santa (Male Spanish)</option>
-              </select>
-            </div>
-
-            <div style="margin-top: 1rem;">
-              <button id="generate-btn" disabled>
-                <span class="generate-text">Generate Speech</span>
-                <span class="generating-text" style="display:none;">
-                  <span class="loading-spinner"></span>
-                  Generating...
-                </span>
-              </button>
-            </div>
-
-            <div id="audio-result" class="audio-result">
-              <h3>Generated Audio</h3>
-              <audio id="audio-player" class="audio-player" controls>
-                Your browser does not support the audio element.
-              </audio>
-              <div style="margin-top: 0.5rem;">
-                <a id="download-btn" class="download-btn" download="tts-generation.wav">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
-                  Download Audio
-                </a>
-                <span id="tts-time" class="tts-time"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Voice Playground Tab -->
-        <div class="tab-panel" id="voice-playground-panel">
+        <div class="tab-panel active" id="voice-playground-panel">
           <div>
             <label for="playground-text">Enter text to try with multiple voices:</label>
             <textarea id="playground-text" placeholder="Enter text here..." disabled></textarea>
@@ -774,16 +692,6 @@
                 <span id="playground-speed-value">1.0x</span>
               </label>
               <input type="range" id="playground-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
-            </div>
-
-            <div class="language-filter">
-              <span class="preset-btn active" data-lang="all">All</span>
-              <span class="preset-btn" data-lang="en-us">US English</span>
-              <span class="preset-btn" data-lang="en-gb">UK English</span>
-              <span class="preset-btn" data-lang="hi">Hindi</span>
-              <span class="preset-btn" data-lang="es">Spanish</span>
-              <span class="preset-btn" data-lang="ja">Japanese</span>
-              <span class="preset-btn" data-lang="zh">Chinese</span>
             </div>
 
             <div class="voice-options" id="voice-options">
@@ -810,44 +718,6 @@
                 </a>
                 <span id="playground-tts-time" class="tts-time"></span>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Batch Generation Tab -->
-        <div class="tab-panel" id="batch-generation-panel">
-          <div>
-            <label for="batch-text">Enter multiple texts (one per line):</label>
-            <textarea id="batch-text" placeholder="Enter one text per line..." rows="6" disabled></textarea>
-
-            <div class="col-2" style="margin-top: 1rem;">
-              <div class="option-group">
-                <label for="batch-voice">Voice</label>
-                <select id="batch-voice" disabled>
-                  <option value="af">Default</option>
-                  <option value="af_bella">Bella (Female US)</option>
-                  <option value="am_adam">Adam (Male US)</option>
-                  <option value="bf_emma">Emma (Female UK)</option>
-                  <option value="hf_alpha">Alpha (Female Hindi)</option>
-                  <option value="ef_dora">Dora (Female Spanish)</option>
-                </select>
-              </div>
-              <div class="option-group">
-                <label for="batch-speed">
-                  <span>Speed</span>
-                  <span id="batch-speed-value">1.0x</span>
-                </label>
-                <input type="range" id="batch-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
-              </div>
-            </div>
-
-            <div style="margin-top: 1rem;">
-              <button id="batch-generate-btn" disabled>Generate Batch Audio</button>
-            </div>
-
-            <div id="batch-results" style="margin-top: 1.5rem;">
-              <!-- Batch results will be added here -->
-              <div id="no-batch-results">Batch generation results will appear here.</div>
             </div>
           </div>
         </div>
@@ -900,24 +770,10 @@
     const loadModelBtn = document.getElementById('load-model-btn');
     const unloadModelBtn = document.getElementById('unload-model-btn');
 
-    // DOM Elements - Basic TTS
-    const ttsText = document.getElementById('tts-text');
-    const speechSpeed = document.getElementById('speech-speed');
-    const speedValue = document.getElementById('speed-value');
-    const voiceSelect = document.getElementById('voice-select');
-    const generateBtn = document.getElementById('generate-btn');
-    const generatingText = document.querySelector('.generating-text');
-    const generateText = document.querySelector('.generate-text');
-    const audioResult = document.getElementById('audio-result');
-    const audioPlayer = document.getElementById('audio-player');
-    const downloadBtn = document.getElementById('download-btn');
-    const ttsTime = document.getElementById('tts-time');
-
     // DOM Elements - Voice Playground
     const playgroundText = document.getElementById('playground-text');
     const playgroundSpeed = document.getElementById('playground-speed');
     const playgroundSpeedValue = document.getElementById('playground-speed-value');
-    const languageFilter = document.querySelectorAll('.language-filter .preset-btn');
     const voiceOptions = document.getElementById('voice-options');
     const playgroundGenerateBtn = document.getElementById('playground-generate-btn');
     const playgroundAudioResult = document.getElementById('playground-audio-result');
@@ -925,15 +781,6 @@
     const playgroundAudioPlayer = document.getElementById('playground-audio-player');
     const playgroundDownloadBtn = document.getElementById('playground-download-btn');
     const playgroundTtsTime = document.getElementById('playground-tts-time');
-
-    // DOM Elements - Batch Generation
-    const batchText = document.getElementById('batch-text');
-    const batchVoice = document.getElementById('batch-voice');
-    const batchSpeed = document.getElementById('batch-speed');
-    const batchSpeedValue = document.getElementById('batch-speed-value');
-    const batchGenerateBtn = document.getElementById('batch-generate-btn');
-    const batchResults = document.getElementById('batch-results');
-    const noBatchResults = document.getElementById('no-batch-results');
 
     // DOM Elements - History
     const historyList = document.getElementById('history-list');
@@ -952,54 +799,100 @@
         language: "en-us",
         gender: "Female",
       },
+      af_heart: {
+        name: "Heart",
+        language: "en-us",
+        gender: "Female",
+        traits: "❤️",
+        targetQuality: "A",
+        overallGrade: "A",
+      },
       af_bella: {
         name: "Bella",
         language: "en-us",
         gender: "Female",
+        traits: "🔥",
+        targetQuality: "A",
+        overallGrade: "A-",
       },
       af_nicole: {
         name: "Nicole",
         language: "en-us",
         gender: "Female",
+        traits: "🎧",
+        targetQuality: "B",
+        overallGrade: "B-",
       },
       af_sarah: {
         name: "Sarah",
         language: "en-us",
         gender: "Female",
+        targetQuality: "B",
+        overallGrade: "C+",
       },
       af_sky: {
         name: "Sky",
         language: "en-us",
         gender: "Female",
+        targetQuality: "B",
+        overallGrade: "C-",
       },
       am_adam: {
         name: "Adam",
         language: "en-us",
         gender: "Male",
+        targetQuality: "D",
+        overallGrade: "F+",
       },
       am_michael: {
         name: "Michael",
         language: "en-us",
         gender: "Male",
+        targetQuality: "B",
+        overallGrade: "C+",
       },
       bf_emma: {
         name: "Emma",
         language: "en-gb",
         gender: "Female",
+        traits: "🚺",
+        targetQuality: "B",
+        overallGrade: "B-",
       },
       bf_isabella: {
         name: "Isabella",
         language: "en-gb",
         gender: "Female",
+        targetQuality: "B",
+        overallGrade: "C",
       },
       bm_george: {
         name: "George",
         language: "en-gb",
         gender: "Male",
+        targetQuality: "B",
+        overallGrade: "C",
       },
       bm_lewis: {
         name: "Lewis",
         language: "en-gb",
+        gender: "Male",
+        targetQuality: "C",
+        overallGrade: "D+",
+      },
+      ef_dora: {
+        name: "Dora",
+        language: "es",
+        gender: "Female",
+      },
+      em_alex: {
+        name: "Alex",
+        language: "es",
+        gender: "Male",
+      },
+      em_santa: {
+        name: "Santa",
+        language: "es",
         gender: "Male",
       },
       hf_alpha: {
@@ -1021,92 +914,7 @@
         name: "Psi",
         language: "hi",
         gender: "Male",
-      },
-      ef_dora: {
-        name: "Dora",
-        language: "es",
-        gender: "Female",
-      },
-      em_alex: {
-        name: "Alex",
-        language: "es",
-        gender: "Male",
-      },
-      em_santa: {
-        name: "Santa",
-        language: "es",
-        gender: "Male",
-      },
-      ff_siwis: {
-        name: "Siwis",
-        language: "fr",
-        gender: "Female",
-      },
-      jf_alpha: {
-        name: "Alpha",
-        language: "ja",
-        gender: "Female",
-      },
-      jf_gongitsune: {
-        name: "Gongitsune",
-        language: "ja",
-        gender: "Female",
-      },
-      jf_nezumi: {
-        name: "Nezumi",
-        language: "ja",
-        gender: "Female",
-      },
-      jf_tebukuro: {
-        name: "Tebukuro",
-        language: "ja",
-        gender: "Female",
-      },
-      jm_kumo: {
-        name: "Kumo",
-        language: "ja",
-        gender: "Male",
-      },
-      zf_xiaobei: {
-        name: "Xiaobei",
-        language: "zh",
-        gender: "Female",
-      },
-      zf_xiaoni: {
-        name: "Xiaoni",
-        language: "zh",
-        gender: "Female",
-      },
-      zf_xiaoxiao: {
-        name: "Xiaoxiao",
-        language: "zh",
-        gender: "Female",
-      },
-      zf_xiaoyi: {
-        name: "Xiaoyi",
-        language: "zh",
-        gender: "Female",
-      },
-      zm_yunjian: {
-        name: "Yunjian",
-        language: "zh",
-        gender: "Male",
-      },
-      zm_yunxi: {
-        name: "Yunxi",
-        language: "zh",
-        gender: "Male",
-      },
-      zm_yunxia: {
-        name: "Yunxia",
-        language: "zh",
-        gender: "Male",
-      },
-      zm_yunyang: {
-        name: "Yunyang",
-        language: "zh",
-        gender: "Male",
-      },
+      }
     };
 
     // Initialize the app
@@ -1165,55 +973,8 @@
       // Unload model button
       unloadModelBtn.addEventListener('click', unloadModel);
 
-      // Generate speech button
-      generateBtn.addEventListener('click', generateSpeech);
-
-      // Speech speed slider
-      speechSpeed.addEventListener('input', () => {
-        speedValue.textContent = `${speechSpeed.value}x`;
-      });
-
-      // Playground speed slider
-      playgroundSpeed.addEventListener('input', () => {
-        playgroundSpeedValue.textContent = `${playgroundSpeed.value}x`;
-      });
-
-      // Batch speed slider
-      batchSpeed.addEventListener('input', () => {
-        batchSpeedValue.textContent = `${batchSpeed.value}x`;
-      });
-
-      // Speed preset buttons
-      document.querySelectorAll('.preset-btn[data-speed]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          // Only allow if model is loaded
-          if (speechSpeed.disabled) return;
-
-          document.querySelectorAll('.preset-btn[data-speed]').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-
-          const speed = btn.getAttribute('data-speed');
-          speechSpeed.value = speed;
-          speedValue.textContent = `${speed}x`;
-        });
-      });
-
-      // Language filter buttons
-      languageFilter.forEach(btn => {
-        btn.addEventListener('click', () => {
-          languageFilter.forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-
-          const lang = btn.getAttribute('data-lang');
-          filterVoicesByLanguage(lang);
-        });
-      });
-
       // Playground generate button
       playgroundGenerateBtn.addEventListener('click', generatePlaygroundSpeech);
-
-      // Batch generate button
-      batchGenerateBtn.addEventListener('click', generateBatchSpeech);
     }
 
     // Setup tab navigation
@@ -1249,13 +1010,17 @@
         const option = document.createElement('div');
         option.className = 'voice-option';
         option.setAttribute('data-voice-id', id);
-        option.setAttribute('data-language', voice.language);
+
+        // Add traits and grades if available
+        const traits = voice.traits ? `<span class="voice-trait">${voice.traits}</span>` : '';
+        const grade = voice.overallGrade ? `<span class="voice-grade">Grade: ${voice.overallGrade}</span>` : '';
 
         option.innerHTML = `
-          <div class="voice-name">${voice.name}</div>
+          <div class="voice-name">${voice.name}${traits}</div>
           <div class="voice-info">
             <span>${voice.language.toUpperCase()}</span>
             <span>${voice.gender}</span>
+            ${grade}
           </div>
         `;
 
@@ -1269,25 +1034,6 @@
         });
 
         voiceOptions.appendChild(option);
-      });
-    }
-
-    // Filter voices by language
-    function filterVoicesByLanguage(language) {
-      if (language === 'all') {
-        document.querySelectorAll('.voice-option').forEach(option => {
-          option.style.display = 'block';
-        });
-        return;
-      }
-
-      document.querySelectorAll('.voice-option').forEach(option => {
-        const voiceLanguage = option.getAttribute('data-language');
-        if (voiceLanguage === language) {
-          option.style.display = 'block';
-        } else {
-          option.style.display = 'none';
-        }
       });
     }
 
@@ -1606,72 +1352,6 @@
       }
     }
 
-    // Generate speech from text
-    async function generateSpeech() {
-      const text = ttsText.value.trim();
-      if (!text) {
-        addLogEntry('Error: Please enter text to speak');
-        return;
-      }
-
-      addLogEntry(`Generating speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-
-      // Show generating indicator
-      generatingText.style.display = 'inline-block';
-      generateText.style.display = 'none';
-      generateBtn.disabled = true;
-
-      try {
-        // Time the operation
-        const startTime = performance.now();
-
-        // Generate speech
-        const result = await tiny.audio.speech.create({
-          model: modelSelect.value,
-          input: text,
-          voice: voiceSelect.value,
-          response_format: audioFormat.value,
-          speed: parseFloat(speechSpeed.value)
-        });
-
-        const timeTaken = performance.now() - startTime;
-
-        // Hide generating indicator
-        generatingText.style.display = 'none';
-        generateText.style.display = 'inline-block';
-        generateBtn.disabled = false;
-
-        // Create an audio blob and URL
-        const audioBlob = new Blob([result.audio], { type: result.content_type });
-        currentAudioBlob = audioBlob;
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        // Update audio player
-        audioPlayer.src = audioUrl;
-        audioResult.style.display = 'block';
-
-        // Update download link
-        downloadBtn.href = audioUrl;
-        downloadBtn.download = `speech_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
-
-        // Update time display
-        ttsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
-
-        // Add to history
-        addToHistory(text, voiceSelect.value, parseFloat(speechSpeed.value), audioBlob, result.content_type, timeTaken);
-
-        addLogEntry(`Speech generated successfully in ${Math.round(timeTaken)}ms`);
-
-      } catch (error) {
-        // Hide generating indicator
-        generatingText.style.display = 'none';
-        generateText.style.display = 'inline-block';
-        generateBtn.disabled = false;
-
-        addLogEntry(`Error generating speech: ${error.message}`);
-      }
-    }
-
     // Generate speech in the playground
     async function generatePlaygroundSpeech() {
       const text = playgroundText.value.trim();
@@ -1699,13 +1379,17 @@
         // Time the operation
         const startTime = performance.now();
 
+        // Determine if we should use streaming (for longer text)
+        const useStreaming = text.length > 500;
+
         // Generate speech
         const result = await tiny.audio.speech.create({
           model: modelSelect.value,
           input: text,
           voice: voiceId,
           response_format: audioFormat.value,
-          speed: parseFloat(playgroundSpeed.value)
+          speed: parseFloat(playgroundSpeed.value),
+          stream: useStreaming
         });
 
         const timeTaken = performance.now() - startTime;
@@ -1713,24 +1397,47 @@
         // Re-enable the button
         playgroundGenerateBtn.disabled = false;
 
-        // Create an audio blob and URL
-        const audioBlob = new Blob([result.audio], { type: result.content_type });
-        const audioUrl = URL.createObjectURL(audioBlob);
+        // Handle streaming result
+        if (result.object === 'audio.speech.stream') {
+          // Combine audio chunks
+          const audioChunks = result.chunks.map(chunk => chunk.audio);
+          const combinedBlob = new Blob(audioChunks, { type: result.chunks[0].content_type });
+          const audioUrl = URL.createObjectURL(combinedBlob);
 
-        // Update audio player
-        playgroundAudioPlayer.src = audioUrl;
-        playgroundAudioResult.style.display = 'block';
-        playgroundVoiceName.textContent = `${voiceName} (${VOICES[voiceId].gender}, ${VOICES[voiceId].language.toUpperCase()})`;
+          // Update audio player
+          playgroundAudioPlayer.src = audioUrl;
+          playgroundAudioResult.style.display = 'block';
+          playgroundVoiceName.textContent = `${voiceName} (${VOICES[voiceId].gender}, ${VOICES[voiceId].language.toUpperCase()}) - ${result.chunks.length} chunks`;
 
-        // Update download link
-        playgroundDownloadBtn.href = audioUrl;
-        playgroundDownloadBtn.download = `voice_${voiceId}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
+          // Update download link
+          playgroundDownloadBtn.href = audioUrl;
+          playgroundDownloadBtn.download = `voice_${voiceId}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
 
-        // Update time display
-        playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
+          // Update time display
+          playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
 
-        // Add to history
-        addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), audioBlob, result.content_type, timeTaken);
+          // Add to history with chunk information
+          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), combinedBlob, result.chunks[0].content_type, timeTaken, result.chunks.length);
+        } else {
+          // Handle single audio result
+          const audioBlob = new Blob([result.audio], { type: result.content_type });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          // Update audio player
+          playgroundAudioPlayer.src = audioUrl;
+          playgroundAudioResult.style.display = 'block';
+          playgroundVoiceName.textContent = `${voiceName} (${VOICES[voiceId].gender}, ${VOICES[voiceId].language.toUpperCase()})`;
+
+          // Update download link
+          playgroundDownloadBtn.href = audioUrl;
+          playgroundDownloadBtn.download = `voice_${voiceId}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
+
+          // Update time display
+          playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
+
+          // Add to history
+          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), audioBlob, result.content_type, timeTaken);
+        }
 
         addLogEntry(`Playground speech generated successfully in ${Math.round(timeTaken)}ms`);
 
@@ -1742,120 +1449,8 @@
       }
     }
 
-    // Generate batch speech
-    async function generateBatchSpeech() {
-      const texts = batchText.value.trim().split('\n').filter(t => t.trim());
-      if (texts.length === 0) {
-        addLogEntry('Error: Please enter at least one text line');
-        return;
-      }
-
-      addLogEntry(`Generating batch speech for ${texts.length} texts`);
-
-      // Disable the button during generation
-      batchGenerateBtn.disabled = true;
-
-      // Clear previous results
-      noBatchResults.style.display = 'none';
-      // Keep previous results unless cleared manually
-
-      // Create result container
-      const batchResultDiv = document.createElement('div');
-      batchResultDiv.className = 'batch-result';
-      batchResultDiv.innerHTML = `
-        <h3>Batch Generation - ${new Date().toLocaleTimeString()}</h3>
-        <div class="batch-info">
-          <div>Voice: ${VOICES[batchVoice.value].name} • Speed: ${batchSpeed.value}x • ${texts.length} items</div>
-          <div class="batch-progress">
-            <span class="batch-progress-text">Generating...</span>
-          </div>
-        </div>
-        <div class="batch-items"></div>
-      `;
-
-      // Add to the results container
-      batchResults.insertBefore(batchResultDiv, batchResults.firstChild);
-
-      const batchItems = batchResultDiv.querySelector('.batch-items');
-      const batchProgressText = batchResultDiv.querySelector('.batch-progress-text');
-
-      // Process each text
-      let completed = 0;
-      const totalItems = texts.length;
-      const startTime = performance.now();
-
-      for (let i = 0; i < texts.length; i++) {
-        const text = texts[i];
-
-        // Update progress
-        batchProgressText.textContent = `Generating ${i + 1}/${totalItems}...`;
-
-        try {
-          // Generate speech for this text
-          const result = await tiny.audio.speech.create({
-            model: modelSelect.value,
-            input: text,
-            voice: batchVoice.value,
-            response_format: audioFormat.value,
-            speed: parseFloat(batchSpeed.value)
-          });
-
-          // Create an audio blob and URL
-          const audioBlob = new Blob([result.audio], { type: result.content_type });
-          const audioUrl = URL.createObjectURL(audioBlob);
-
-          // Create item
-          const itemDiv = document.createElement('div');
-          itemDiv.className = 'audio-panel';
-          itemDiv.innerHTML = `
-            <div class="text">${text.length > 100 ? text.substring(0, 100) + '...' : text}</div>
-            <audio controls src="${audioUrl}" class="audio-player"></audio>
-            <a href="${audioUrl}" download="batch_${i + 1}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}" class="download-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Download
-            </a>
-          `;
-
-          // Add to batch items
-          batchItems.appendChild(itemDiv);
-
-          // Add to history
-          addToHistory(text, batchVoice.value, parseFloat(batchSpeed.value), audioBlob, result.content_type);
-
-          completed++;
-
-        } catch (error) {
-          addLogEntry(`Error generating batch item ${i + 1}: ${error.message}`);
-
-          // Create error item
-          const errorDiv = document.createElement('div');
-          errorDiv.className = 'audio-panel';
-          errorDiv.innerHTML = `
-            <div class="text">${text.length > 100 ? text.substring(0, 100) + '...' : text}</div>
-            <div class="error" style="color: var(--error-color);">Error: ${error.message}</div>
-          `;
-
-          // Add to batch items
-          batchItems.appendChild(errorDiv);
-        }
-      }
-
-      // Final time
-      const timeTaken = performance.now() - startTime;
-
-      // Update progress to complete
-      batchProgressText.textContent = `Completed ${completed}/${totalItems} in ${Math.round(timeTaken)}ms`;
-
-      // Re-enable the button
-      batchGenerateBtn.disabled = false;
-
-      addLogEntry(`Batch generation completed: ${completed}/${totalItems} items in ${Math.round(timeTaken)}ms`);
-    }
-
     // Add to generation history
-    function addToHistory(text, voice, speed, audioBlob, contentType, timeTaken = 0) {
+    function addToHistory(text, voice, speed, audioBlob, contentType, timeTaken = 0, chunks = 0) {
       const historyItem = {
         id: Date.now(),
         text,
@@ -1864,7 +1459,8 @@
         audioBlob,
         contentType,
         time: new Date(),
-        timeTaken
+        timeTaken,
+        chunks
       };
 
       generationHistory.unshift(historyItem);
@@ -1892,14 +1488,17 @@
       generationHistory.forEach(item => {
         const audioUrl = URL.createObjectURL(item.audioBlob);
         const voiceInfo = VOICES[item.voice] || { name: item.voice, language: 'unknown' };
+        const traits = voiceInfo.traits ? `<span class="voice-trait">${voiceInfo.traits}</span>` : '';
+        const grade = voiceInfo.overallGrade ? `<span class="voice-grade">Grade: ${voiceInfo.overallGrade}</span>` : '';
+        const chunks = item.chunks ? `<span class="chunks-info">(${item.chunks} chunks)</span>` : '';
 
         const historyItemDiv = document.createElement('div');
         historyItemDiv.className = 'history-item';
         historyItemDiv.innerHTML = `
           <div class="history-text">${item.text.length > 100 ? item.text.substring(0, 100) + '...' : item.text}</div>
           <div class="history-info">
-            <div>${voiceInfo.name} • ${item.speed}x speed</div>
-            <div>${item.time.toLocaleTimeString()}</div>
+            <div>${voiceInfo.name}${traits} • ${item.speed}x speed ${chunks}</div>
+            <div>${grade} • ${item.time.toLocaleTimeString()}</div>
           </div>
           <audio controls src="${audioUrl}" class="audio-player"></audio>
           <div style="margin-top: 0.5rem;">
@@ -1934,12 +1533,6 @@
       audioFormat.disabled = true;
       unloadModelBtn.disabled = true;
 
-      // Basic TTS controls
-      ttsText.disabled = true;
-      speechSpeed.disabled = true;
-      voiceSelect.disabled = true;
-      generateBtn.disabled = true;
-
       // Playground controls
       playgroundText.disabled = true;
       playgroundSpeed.disabled = true;
@@ -1947,11 +1540,6 @@
       document.querySelectorAll('.voice-option').forEach(option => {
         option.classList.add('disabled');
       });
-      // Batch controls
-      batchText.disabled = true;
-      batchVoice.disabled = true;
-      batchSpeed.disabled = true;
-      batchGenerateBtn.disabled = true;
     }
 
     // Enable interface after model is loaded
@@ -1962,12 +1550,6 @@
       loadModelBtn.disabled = false;
       unloadModelBtn.disabled = false;
 
-      // Basic TTS controls
-      ttsText.disabled = false;
-      speechSpeed.disabled = false;
-      voiceSelect.disabled = false;
-      generateBtn.disabled = false;
-
       // Playground controls
       playgroundText.disabled = false;
       playgroundSpeed.disabled = false;
@@ -1975,12 +1557,6 @@
       document.querySelectorAll('.voice-option').forEach(option => {
         option.classList.remove('disabled');
       });
-
-      // Batch controls
-      batchText.disabled = false;
-      batchVoice.disabled = false;
-      batchSpeed.disabled = false;
-      batchGenerateBtn.disabled = false;
     }
 
     // Initialize the app when the page loads
