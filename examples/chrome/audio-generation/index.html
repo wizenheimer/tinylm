@@ -257,13 +257,13 @@
       position: relative;
       width: 48px;
       height: 24px;
-      margin-right: 8px;
     }
 
     .toggle-button input {
       opacity: 0;
       width: 0;
       height: 0;
+      position: absolute;
     }
 
     .toggle-slider {
@@ -301,7 +301,10 @@
     .toggle-label {
       display: flex;
       align-items: center;
+      gap: 8px;
       cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
     }
 
     textarea {
@@ -596,6 +599,38 @@
       display: flex;
       flex-wrap: wrap;
     }
+
+    /* Add styles for stream chunks */
+    .stream-chunks {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      background-color: white;
+    }
+
+    .chunk-item {
+      padding: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      background-color: white;
+    }
+
+    .chunk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .chunk-text {
+      font-size: 0.875rem;
+      color: #666;
+      margin-bottom: 0.5rem;
+    }
   </style>
 </head>
 
@@ -694,6 +729,19 @@
               <input type="range" id="playground-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
             </div>
 
+            <div class="option-group" style="margin-top: 1rem;">
+              <label class="toggle-label">
+                <span class="toggle-button">
+                  <input type="checkbox" id="stream-toggle">
+                  <span class="toggle-slider"></span>
+                </span>
+                Enable Streaming
+              </label>
+              <div class="hint-text" style="font-size: 0.75rem; color: #666; margin-top: 0.25rem;">
+                Streaming processes text in chunks, useful for longer texts
+              </div>
+            </div>
+
             <div class="voice-options" id="voice-options">
               <!-- Voice options will be dynamically added here -->
             </div>
@@ -704,19 +752,32 @@
 
             <div id="playground-audio-result" class="audio-result">
               <h3>Generated Audio - <span id="playground-voice-name"></span></h3>
-              <audio id="playground-audio-player" class="audio-player" controls>
-                Your browser does not support the audio element.
-              </audio>
-              <div style="margin-top: 0.5rem;">
-                <a id="playground-download-btn" class="download-btn" download="voice-sample.wav">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
-                  Download Audio
-                </a>
-                <span id="playground-tts-time" class="tts-time"></span>
+
+              <!-- Streaming chunks container -->
+              <div id="stream-chunks-container" style="display: none; margin-bottom: 1rem;">
+                <h4>Stream Chunks</h4>
+                <div id="stream-chunks" class="stream-chunks">
+                  <!-- Chunks will be added here dynamically -->
+                </div>
+              </div>
+
+              <!-- Final combined audio -->
+              <div id="final-audio-container">
+                <h4>Final Audio</h4>
+                <audio id="playground-audio-player" class="audio-player" controls>
+                  Your browser does not support the audio element.
+                </audio>
+                <div style="margin-top: 0.5rem;">
+                  <a id="playground-download-btn" class="download-btn" download="voice-sample.wav">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                      stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    Download Audio
+                  </a>
+                  <span id="playground-tts-time" class="tts-time"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -784,6 +845,11 @@
 
     // DOM Elements - History
     const historyList = document.getElementById('history-list');
+
+    // Add streaming toggle to DOM elements
+    const streamToggle = document.getElementById('stream-toggle');
+    const streamChunksContainer = document.getElementById('stream-chunks-container');
+    const streamChunks = document.getElementById('stream-chunks');
 
     // App state
     let tiny = null;
@@ -1379,8 +1445,12 @@
         // Time the operation
         const startTime = performance.now();
 
-        // Determine if we should use streaming (for longer text)
-        const useStreaming = text.length > 500;
+        // Use streaming based on toggle state
+        const useStreaming = streamToggle.checked;
+
+        // Clear previous stream chunks and hide container initially
+        streamChunks.innerHTML = '';
+        streamChunksContainer.style.display = 'none';
 
         // Generate speech
         const result = await tiny.audio.speech.create({
@@ -1398,18 +1468,66 @@
         playgroundGenerateBtn.disabled = false;
 
         // Handle streaming result
-        if (result.object === 'audio.speech.stream') {
-          // Combine audio chunks
-          const audioChunks = result.chunks.map(chunk => chunk.audio);
-          const combinedBlob = new Blob(audioChunks, { type: result.chunks[0].content_type });
+        if (useStreaming && result.object === 'audio.speech.stream' && result.chunks && result.chunks.length > 0) {
+          // Show streaming container
+          streamChunksContainer.style.display = 'block';
+
+          // Array to store all audio data
+          const audioChunks = [];
+
+          // Display and handle individual chunks
+          result.chunks.forEach((chunk, index) => {
+            // Store the chunk's audio data
+            audioChunks.push(new Uint8Array(chunk.audio));
+
+            // Create blob for this chunk's display
+            const chunkBlob = new Blob([chunk.audio], { type: chunk.content_type });
+            const chunkUrl = URL.createObjectURL(chunkBlob);
+
+            const chunkElement = document.createElement('div');
+            chunkElement.className = 'chunk-item';
+            chunkElement.innerHTML = `
+              <div class="chunk-header">
+                <strong>Chunk ${index + 1}/${result.chunks.length}</strong>
+                <span class="chunk-size">${formatBytes(chunk.audio.byteLength)}</span>
+              </div>
+              ${chunk.text ? `<div class="chunk-text">"${chunk.text}"</div>` : ''}
+              <audio controls src="${chunkUrl}" class="audio-player"></audio>
+              <div style="margin-top: 0.5rem;">
+                <a href="${chunkUrl}" download="chunk_${index + 1}_${voiceId}.${audioFormat.value}" class="download-btn">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Download Chunk
+                </a>
+              </div>
+            `;
+            streamChunks.appendChild(chunkElement);
+          });
+
+          // Calculate total size needed for all chunks
+          const totalLength = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+
+          // Create a combined array and merge all chunks
+          const combinedArray = new Uint8Array(totalLength);
+          let offset = 0;
+
+          // Copy each chunk into the combined array
+          audioChunks.forEach(chunk => {
+            combinedArray.set(chunk, offset);
+            offset += chunk.length;
+          });
+
+          // Create the final blob with the combined data
+          const combinedBlob = new Blob([combinedArray], { type: result.chunks[0].content_type });
           const audioUrl = URL.createObjectURL(combinedBlob);
 
-          // Update audio player
+          // Update audio player with combined audio
           playgroundAudioPlayer.src = audioUrl;
           playgroundAudioResult.style.display = 'block';
           playgroundVoiceName.textContent = `${voiceName} (${VOICES[voiceId].gender}, ${VOICES[voiceId].language.toUpperCase()}) - ${result.chunks.length} chunks`;
 
-          // Update download link
+          // Update download link for combined audio
           playgroundDownloadBtn.href = audioUrl;
           playgroundDownloadBtn.download = `voice_${voiceId}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
 
@@ -1418,9 +1536,15 @@
 
           // Add to history with chunk information
           addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), combinedBlob, result.chunks[0].content_type, timeTaken, result.chunks.length);
-        } else {
-          // Handle single audio result
-          const audioBlob = new Blob([result.audio], { type: result.content_type });
+
+        } else if (!useStreaming) {
+          // Handle non-streaming result
+          if (!result || !result.audio) {
+            throw new Error('No audio data received from speech generation');
+          }
+
+          // Create blob from the audio data
+          const audioBlob = new Blob([result.audio], { type: result.content_type || 'audio/wav' });
           const audioUrl = URL.createObjectURL(audioBlob);
 
           // Update audio player
@@ -1436,7 +1560,9 @@
           playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
 
           // Add to history
-          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), audioBlob, result.content_type, timeTaken);
+          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), audioBlob, result.content_type || 'audio/wav', timeTaken);
+        } else {
+          throw new Error('No valid audio data received from speech generation');
         }
 
         addLogEntry(`Playground speech generated successfully in ${Math.round(timeTaken)}ms`);
@@ -1444,8 +1570,10 @@
       } catch (error) {
         // Re-enable the button
         playgroundGenerateBtn.disabled = false;
+        streamChunksContainer.style.display = 'none';
 
         addLogEntry(`Error generating playground speech: ${error.message}`);
+        console.error('Speech generation error:', error);
       }
     }
 
