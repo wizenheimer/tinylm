@@ -6,6 +6,13 @@ node_modules/
 dist/
 build/
 
+# Output files
+*.wav
+*.mp3
+*.ogg
+*.m4a
+*.flac
+
 # Package preview
 preview/
 *.tgz
