@@ -1,0 +1,1991 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TinyLM Text-to-Speech</title>
+  <script type="importmap">
+      {
+        "imports": {
+          "tinylm": "./dist/index.js",
+          "phonemizer": "https://cdn.jsdelivr.net/npm/phonemizer/+esm",
+          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers/+esm"
+        }
+      }
+    </script>
+  <style>
+    :root {
+      --primary-color: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --background: #f9fafb;
+      --card-bg: #ffffff;
+      --text-color: #1f2937;
+      --border-color: #e5e7eb;
+      --success-color: #10b981;
+      --error-color: #ef4444;
+      --warning-color: #f59e0b;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      color: var(--text-color);
+      background-color: var(--background);
+      padding: 0;
+      margin: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      color: var(--text-color);
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background-color: #ccc;
+    }
+
+    .status-indicator.green {
+      background-color: var(--success-color);
+    }
+
+    .status-indicator.red {
+      background-color: var(--error-color);
+    }
+
+    .status-indicator.yellow {
+      background-color: var(--warning-color);
+    }
+
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .system-status {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .status-item {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .progress-container {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background-color: var(--border-color);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background-color: var(--primary-color);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* File progress styles */
+    .file-progress-container {
+      margin-top: 1rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .file-progress-item {
+      margin-bottom: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.25rem;
+      padding: 0.5rem;
+      background-color: var(--card-bg);
+    }
+
+    .file-progress-info {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+    }
+
+    .file-name {
+      font-size: 0.875rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .file-stats {
+      font-size: 0.75rem;
+      color: #666;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .file-progress-bar {
+      height: 4px;
+      background-color: var(--border-color);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .file-progress-bar-fill {
+      height: 100%;
+      background-color: var(--primary-color);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .file-status-error .file-progress-bar-fill {
+      background-color: var(--error-color);
+    }
+
+    .file-status-done .file-progress-bar-fill {
+      background-color: var(--success-color);
+    }
+
+    .fade-out {
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .overall-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .options-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .option-group {
+      display: flex;
+      flex-direction: column;
+      min-width: 200px;
+    }
+
+    .option-group label {
+      margin-bottom: 0.25rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .option-group select,
+    .option-group input {
+      padding: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+    }
+
+    .log-panel {
+      height: 200px;
+      overflow-y: auto;
+      background-color: #1a202c;
+      color: #cbd5e0;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.875rem;
+      border-radius: 0.375rem;
+    }
+
+    .log-entry {
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .toggle-button {
+      display: inline-block;
+      position: relative;
+      width: 48px;
+      height: 24px;
+      margin-right: 8px;
+    }
+
+    .toggle-button input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked+.toggle-slider {
+      background-color: var(--primary-color);
+    }
+
+    input:checked+.toggle-slider:before {
+      transform: translateX(24px);
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      min-height: 100px;
+      font-family: inherit;
+      resize: vertical;
+    }
+
+    .tab-container {
+      margin-bottom: 1rem;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 1rem;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+
+    .tab.active {
+      border-bottom-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .col-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      .col-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .audio-panel {
+      margin-top: 1.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      padding: 1rem;
+    }
+
+    .audio-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    .playback-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    .tts-time {
+      color: #666;
+      font-size: 0.875rem;
+    }
+
+    .voice-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .voice-option {
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      padding: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .voice-option:hover {
+      background-color: rgba(139, 92, 246, 0.05);
+    }
+
+    .voice-option.selected {
+      background-color: rgba(139, 92, 246, 0.1);
+      border-color: var(--primary-color);
+    }
+
+    .voice-name {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .voice-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #666;
+    }
+
+    .range-slider {
+      width: 100%;
+      position: relative;
+      margin-top: 1rem;
+    }
+
+    .range-slider label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+      font-size: 0.875rem;
+    }
+
+    .range-slider input {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+    }
+
+    .range-slider input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      cursor: pointer;
+    }
+
+    .preset-btn {
+      background-color: transparent;
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .preset-btn:hover {
+      background-color: rgba(139, 92, 246, 0.05);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    .preset-btn.active {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      color: white;
+    }
+
+    .language-filter {
+      margin-bottom: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .badge {
+      background-color: var(--primary-color);
+      color: white;
+      padding: 0.25rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .history-item {
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      padding: 0.75rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .history-item:hover {
+      background-color: rgba(139, 92, 246, 0.05);
+    }
+
+    .history-text {
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #666;
+    }
+
+    .audio-result {
+      margin-top: 2rem;
+      display: none;
+    }
+
+    .audio-player {
+      width: 100%;
+      margin-top: 0.5rem;
+    }
+
+    .download-btn {
+      margin-top: 0.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .download-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Loading indicator for generation */
+    .loading-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .save-preset-container {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .preset-pill {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background-color: rgba(139, 92, 246, 0.1);
+      border-radius: 9999px;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .preset-pill:hover {
+      background-color: rgba(139, 92, 246, 0.2);
+    }
+
+    .preset-name {
+      font-weight: 500;
+    }
+
+    .preset-delete {
+      margin-left: 0.5rem;
+      color: var(--error-color);
+      cursor: pointer;
+    }
+
+    .saved-presets {
+      margin-top: 0.5rem;
+      display: flex;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>TinyLM Text-to-Speech</h1>
+      <p>Generate natural speech from text in your browser</p>
+    </header>
+
+    <div class="card">
+      <h2>System Status</h2>
+      <div class="system-status">
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="webgpu-status"></span>
+            <strong>WebGPU:</strong> <span id="webgpu-value">Checking...</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="fp16-status"></span>
+            <strong>FP16 Support:</strong> <span id="fp16-value">Checking...</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <span class="status-indicator" id="model-status"></span>
+            <strong>Model Status:</strong> <span id="model-status-value">Not loaded</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div>
+            <strong>Backend:</strong> <span id="backend-value">Unknown</span>
+          </div>
+        </div>
+      </div>
+      <div class="progress-container">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+          <span id="progress-label">Loading model...</span>
+          <span id="progress-percentage">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+
+        <!-- Overall stats display -->
+        <div id="overall-stats" class="overall-stats" style="display: none;">
+          <div>
+            <span id="loaded-size">0 B</span> / <span id="total-size">0 B</span>
+          </div>
+          <div>
+            <span id="download-speed">0 B/s</span> • <span id="eta">--</span>
+          </div>
+        </div>
+
+        <!-- File progress container -->
+        <div id="file-progress-container" class="file-progress-container" style="display: none;">
+          <!-- File progress items will be added here dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="options-panel">
+        <div class="option-group">
+          <label for="model-select">TTS Model</label>
+          <select id="model-select">
+            <option value="onnx-community/Kokoro-82M-v1.0-ONNX">Kokoro TTS</option>
+            <!-- Add other models as needed -->
+          </select>
+        </div>
+        <div class="option-group">
+          <label for="audio-format">Audio Format</label>
+          <select id="audio-format">
+            <option value="wav">WAV</option>
+            <option value="mp3">MP3</option>
+          </select>
+        </div>
+        <div>
+          <button id="load-model-btn">Load Model</button>
+          <button id="unload-model-btn" disabled>Unload Model</button>
+        </div>
+      </div>
+
+      <div class="tab-container">
+        <div class="tabs">
+          <div class="tab active" data-tab="basic-tts">Basic TTS</div>
+          <div class="tab" data-tab="voice-playground">Voice Playground</div>
+          <div class="tab" data-tab="batch-generation">Batch Generation</div>
+          <div class="tab" data-tab="history">History</div>
+        </div>
+
+        <!-- Basic TTS Tab -->
+        <div class="tab-panel active" id="basic-tts-panel">
+          <div>
+            <label for="tts-text">Enter text to speak:</label>
+            <textarea id="tts-text" placeholder="Enter text here..." disabled></textarea>
+
+            <div class="range-slider">
+              <label for="speech-speed">
+                <span>Speed</span>
+                <span id="speed-value">1.0x</span>
+              </label>
+              <input type="range" id="speech-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
+              <div style="display: flex; justify-content: space-between; margin-top: 0.25rem;">
+                <span class="preset-btn" data-speed="0.8">Slow</span>
+                <span class="preset-btn active" data-speed="1.0">Normal</span>
+                <span class="preset-btn" data-speed="1.2">Fast</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+              <label for="voice-select">Voice:</label>
+              <select id="voice-select" disabled>
+                <option value="af">Default</option>
+                <option value="af_bella">Bella (Female US)</option>
+                <option value="af_nicole">Nicole (Female US)</option>
+                <option value="af_sarah">Sarah (Female US)</option>
+                <option value="af_sky">Sky (Female US)</option>
+                <option value="am_adam">Adam (Male US)</option>
+                <option value="am_michael">Michael (Male US)</option>
+                <option value="bf_emma">Emma (Female UK)</option>
+                <option value="bf_isabella">Isabella (Female UK)</option>
+                <option value="bm_george">George (Male UK)</option>
+                <option value="bm_lewis">Lewis (Male UK)</option>
+                <option value="hf_alpha">Alpha (Female Hindi)</option>
+                <option value="hf_beta">Beta (Female Hindi)</option>
+                <option value="hm_omega">Omega (Male Hindi)</option>
+                <option value="hm_psi">Psi (Male Hindi)</option>
+                <option value="ef_dora">Dora (Female Spanish)</option>
+                <option value="em_alex">Alex (Male Spanish)</option>
+                <option value="em_santa">Santa (Male Spanish)</option>
+              </select>
+            </div>
+
+            <div style="margin-top: 1rem;">
+              <button id="generate-btn" disabled>
+                <span class="generate-text">Generate Speech</span>
+                <span class="generating-text" style="display:none;">
+                  <span class="loading-spinner"></span>
+                  Generating...
+                </span>
+              </button>
+            </div>
+
+            <div id="audio-result" class="audio-result">
+              <h3>Generated Audio</h3>
+              <audio id="audio-player" class="audio-player" controls>
+                Your browser does not support the audio element.
+              </audio>
+              <div style="margin-top: 0.5rem;">
+                <a id="download-btn" class="download-btn" download="tts-generation.wav">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Download Audio
+                </a>
+                <span id="tts-time" class="tts-time"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Voice Playground Tab -->
+        <div class="tab-panel" id="voice-playground-panel">
+          <div>
+            <label for="playground-text">Enter text to try with multiple voices:</label>
+            <textarea id="playground-text" placeholder="Enter text here..." disabled></textarea>
+
+            <div class="range-slider">
+              <label for="playground-speed">
+                <span>Speed</span>
+                <span id="playground-speed-value">1.0x</span>
+              </label>
+              <input type="range" id="playground-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
+            </div>
+
+            <div class="language-filter">
+              <span class="preset-btn active" data-lang="all">All</span>
+              <span class="preset-btn" data-lang="en-us">US English</span>
+              <span class="preset-btn" data-lang="en-gb">UK English</span>
+              <span class="preset-btn" data-lang="hi">Hindi</span>
+              <span class="preset-btn" data-lang="es">Spanish</span>
+              <span class="preset-btn" data-lang="ja">Japanese</span>
+              <span class="preset-btn" data-lang="zh">Chinese</span>
+            </div>
+
+            <div class="voice-options" id="voice-options">
+              <!-- Voice options will be dynamically added here -->
+            </div>
+
+            <div style="margin-top: 1rem;">
+              <button id="playground-generate-btn" disabled>Generate Speech</button>
+            </div>
+
+            <div id="playground-audio-result" class="audio-result">
+              <h3>Generated Audio - <span id="playground-voice-name"></span></h3>
+              <audio id="playground-audio-player" class="audio-player" controls>
+                Your browser does not support the audio element.
+              </audio>
+              <div style="margin-top: 0.5rem;">
+                <a id="playground-download-btn" class="download-btn" download="voice-sample.wav">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Download Audio
+                </a>
+                <span id="playground-tts-time" class="tts-time"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch Generation Tab -->
+        <div class="tab-panel" id="batch-generation-panel">
+          <div>
+            <label for="batch-text">Enter multiple texts (one per line):</label>
+            <textarea id="batch-text" placeholder="Enter one text per line..." rows="6" disabled></textarea>
+
+            <div class="col-2" style="margin-top: 1rem;">
+              <div class="option-group">
+                <label for="batch-voice">Voice</label>
+                <select id="batch-voice" disabled>
+                  <option value="af">Default</option>
+                  <option value="af_bella">Bella (Female US)</option>
+                  <option value="am_adam">Adam (Male US)</option>
+                  <option value="bf_emma">Emma (Female UK)</option>
+                  <option value="hf_alpha">Alpha (Female Hindi)</option>
+                  <option value="ef_dora">Dora (Female Spanish)</option>
+                </select>
+              </div>
+              <div class="option-group">
+                <label for="batch-speed">
+                  <span>Speed</span>
+                  <span id="batch-speed-value">1.0x</span>
+                </label>
+                <input type="range" id="batch-speed" min="0.5" max="1.5" step="0.1" value="1.0" disabled>
+              </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+              <button id="batch-generate-btn" disabled>Generate Batch Audio</button>
+            </div>
+
+            <div id="batch-results" style="margin-top: 1.5rem;">
+              <!-- Batch results will be added here -->
+              <div id="no-batch-results">Batch generation results will appear here.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-panel" id="history-panel">
+          <div>
+            <h3>Generation History</h3>
+            <div id="history-list">
+              <div>No generation history yet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>System Log</h2>
+      <div class="log-panel" id="log-panel"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import TinyLM from npm package
+    import { TinyLM } from 'tinylm';
+
+    // DOM Elements - System Status
+    const webgpuStatus = document.getElementById('webgpu-status');
+    const webgpuValue = document.getElementById('webgpu-value');
+    const fp16Status = document.getElementById('fp16-status');
+    const fp16Value = document.getElementById('fp16-value');
+    const modelStatus = document.getElementById('model-status');
+    const modelStatusValue = document.getElementById('model-status-value');
+    const backendValue = document.getElementById('backend-value');
+    const progressContainer = document.querySelector('.progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const overallStats = document.getElementById('overall-stats');
+    const loadedSize = document.getElementById('loaded-size');
+    const totalSize = document.getElementById('total-size');
+    const downloadSpeed = document.getElementById('download-speed');
+    const eta = document.getElementById('eta');
+    const fileProgressContainer = document.getElementById('file-progress-container');
+    const logPanel = document.getElementById('log-panel');
+
+    // DOM Elements - Model Options
+    const modelSelect = document.getElementById('model-select');
+    const audioFormat = document.getElementById('audio-format');
+    const loadModelBtn = document.getElementById('load-model-btn');
+    const unloadModelBtn = document.getElementById('unload-model-btn');
+
+    // DOM Elements - Basic TTS
+    const ttsText = document.getElementById('tts-text');
+    const speechSpeed = document.getElementById('speech-speed');
+    const speedValue = document.getElementById('speed-value');
+    const voiceSelect = document.getElementById('voice-select');
+    const generateBtn = document.getElementById('generate-btn');
+    const generatingText = document.querySelector('.generating-text');
+    const generateText = document.querySelector('.generate-text');
+    const audioResult = document.getElementById('audio-result');
+    const audioPlayer = document.getElementById('audio-player');
+    const downloadBtn = document.getElementById('download-btn');
+    const ttsTime = document.getElementById('tts-time');
+
+    // DOM Elements - Voice Playground
+    const playgroundText = document.getElementById('playground-text');
+    const playgroundSpeed = document.getElementById('playground-speed');
+    const playgroundSpeedValue = document.getElementById('playground-speed-value');
+    const languageFilter = document.querySelectorAll('.language-filter .preset-btn');
+    const voiceOptions = document.getElementById('voice-options');
+    const playgroundGenerateBtn = document.getElementById('playground-generate-btn');
+    const playgroundAudioResult = document.getElementById('playground-audio-result');
+    const playgroundVoiceName = document.getElementById('playground-voice-name');
+    const playgroundAudioPlayer = document.getElementById('playground-audio-player');
+    const playgroundDownloadBtn = document.getElementById('playground-download-btn');
+    const playgroundTtsTime = document.getElementById('playground-tts-time');
+
+    // DOM Elements - Batch Generation
+    const batchText = document.getElementById('batch-text');
+    const batchVoice = document.getElementById('batch-voice');
+    const batchSpeed = document.getElementById('batch-speed');
+    const batchSpeedValue = document.getElementById('batch-speed-value');
+    const batchGenerateBtn = document.getElementById('batch-generate-btn');
+    const batchResults = document.getElementById('batch-results');
+    const noBatchResults = document.getElementById('no-batch-results');
+
+    // DOM Elements - History
+    const historyList = document.getElementById('history-list');
+
+    // App state
+    let tiny = null;
+    let activeFiles = new Map();
+    let generationHistory = [];
+    let currentAudioBlob = null;
+    let selectedVoice = 'af';
+
+    // Voice data (could also be fetched from the API)
+    const VOICES = {
+      af: {
+        name: "Default",
+        language: "en-us",
+        gender: "Female",
+      },
+      af_bella: {
+        name: "Bella",
+        language: "en-us",
+        gender: "Female",
+      },
+      af_nicole: {
+        name: "Nicole",
+        language: "en-us",
+        gender: "Female",
+      },
+      af_sarah: {
+        name: "Sarah",
+        language: "en-us",
+        gender: "Female",
+      },
+      af_sky: {
+        name: "Sky",
+        language: "en-us",
+        gender: "Female",
+      },
+      am_adam: {
+        name: "Adam",
+        language: "en-us",
+        gender: "Male",
+      },
+      am_michael: {
+        name: "Michael",
+        language: "en-us",
+        gender: "Male",
+      },
+      bf_emma: {
+        name: "Emma",
+        language: "en-gb",
+        gender: "Female",
+      },
+      bf_isabella: {
+        name: "Isabella",
+        language: "en-gb",
+        gender: "Female",
+      },
+      bm_george: {
+        name: "George",
+        language: "en-gb",
+        gender: "Male",
+      },
+      bm_lewis: {
+        name: "Lewis",
+        language: "en-gb",
+        gender: "Male",
+      },
+      hf_alpha: {
+        name: "Alpha",
+        language: "hi",
+        gender: "Female",
+      },
+      hf_beta: {
+        name: "Beta",
+        language: "hi",
+        gender: "Female",
+      },
+      hm_omega: {
+        name: "Omega",
+        language: "hi",
+        gender: "Male",
+      },
+      hm_psi: {
+        name: "Psi",
+        language: "hi",
+        gender: "Male",
+      },
+      ef_dora: {
+        name: "Dora",
+        language: "es",
+        gender: "Female",
+      },
+      em_alex: {
+        name: "Alex",
+        language: "es",
+        gender: "Male",
+      },
+      em_santa: {
+        name: "Santa",
+        language: "es",
+        gender: "Male",
+      },
+      ff_siwis: {
+        name: "Siwis",
+        language: "fr",
+        gender: "Female",
+      },
+      jf_alpha: {
+        name: "Alpha",
+        language: "ja",
+        gender: "Female",
+      },
+      jf_gongitsune: {
+        name: "Gongitsune",
+        language: "ja",
+        gender: "Female",
+      },
+      jf_nezumi: {
+        name: "Nezumi",
+        language: "ja",
+        gender: "Female",
+      },
+      jf_tebukuro: {
+        name: "Tebukuro",
+        language: "ja",
+        gender: "Female",
+      },
+      jm_kumo: {
+        name: "Kumo",
+        language: "ja",
+        gender: "Male",
+      },
+      zf_xiaobei: {
+        name: "Xiaobei",
+        language: "zh",
+        gender: "Female",
+      },
+      zf_xiaoni: {
+        name: "Xiaoni",
+        language: "zh",
+        gender: "Female",
+      },
+      zf_xiaoxiao: {
+        name: "Xiaoxiao",
+        language: "zh",
+        gender: "Female",
+      },
+      zf_xiaoyi: {
+        name: "Xiaoyi",
+        language: "zh",
+        gender: "Female",
+      },
+      zm_yunjian: {
+        name: "Yunjian",
+        language: "zh",
+        gender: "Male",
+      },
+      zm_yunxi: {
+        name: "Yunxi",
+        language: "zh",
+        gender: "Male",
+      },
+      zm_yunxia: {
+        name: "Yunxia",
+        language: "zh",
+        gender: "Male",
+      },
+      zm_yunyang: {
+        name: "Yunyang",
+        language: "zh",
+        gender: "Male",
+      },
+    };
+
+    // Initialize the app
+    async function initApp() {
+      addLogEntry('Initializing TinyLM...');
+
+      // Create TinyLM instance with progress tracking
+      tiny = new TinyLM({
+        progressCallback: handleDetailedProgress,
+        progressThrottleTime: 50
+      });
+
+      // Check hardware capabilities
+      addLogEntry('Checking hardware capabilities...');
+      const capabilities = await tiny.models.check();
+
+      // Update UI with capabilities
+      updateCapabilitiesUI(capabilities);
+
+      // Initialize TinyLM (without loading model yet)
+      await tiny.init({ lazyLoad: true });
+
+      addLogEntry('Initialization complete. Ready to load TTS model.');
+
+      // Setup event listeners
+      setupEventListeners();
+      setupTabs();
+      populateVoiceOptions();
+    }
+
+    // Update the UI with capabilities info
+    function updateCapabilitiesUI(capabilities) {
+      const { isWebGPUSupported, fp16Supported, environment } = capabilities;
+
+      // WebGPU status
+      webgpuValue.textContent = isWebGPUSupported ? 'Available' : 'Not Available';
+      webgpuStatus.className = `status-indicator ${isWebGPUSupported ? 'green' : 'red'}`;
+
+      // FP16 support
+      fp16Value.textContent = fp16Supported ? 'Supported' : 'Not Supported';
+      fp16Status.className = `status-indicator ${fp16Supported ? 'green' : 'red'}`;
+
+      // Backend
+      if (environment && environment.backend) {
+        backendValue.textContent = environment.backend;
+      }
+
+      addLogEntry(`Hardware check: WebGPU ${isWebGPUSupported ? 'available' : 'not available'}, FP16 ${fp16Supported ? 'supported' : 'not supported'}`);
+    }
+
+    // Setup event listeners
+    function setupEventListeners() {
+      // Load model button
+      loadModelBtn.addEventListener('click', loadModel);
+
+      // Unload model button
+      unloadModelBtn.addEventListener('click', unloadModel);
+
+      // Generate speech button
+      generateBtn.addEventListener('click', generateSpeech);
+
+      // Speech speed slider
+      speechSpeed.addEventListener('input', () => {
+        speedValue.textContent = `${speechSpeed.value}x`;
+      });
+
+      // Playground speed slider
+      playgroundSpeed.addEventListener('input', () => {
+        playgroundSpeedValue.textContent = `${playgroundSpeed.value}x`;
+      });
+
+      // Batch speed slider
+      batchSpeed.addEventListener('input', () => {
+        batchSpeedValue.textContent = `${batchSpeed.value}x`;
+      });
+
+      // Speed preset buttons
+      document.querySelectorAll('.preset-btn[data-speed]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          // Only allow if model is loaded
+          if (speechSpeed.disabled) return;
+
+          document.querySelectorAll('.preset-btn[data-speed]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          const speed = btn.getAttribute('data-speed');
+          speechSpeed.value = speed;
+          speedValue.textContent = `${speed}x`;
+        });
+      });
+
+      // Language filter buttons
+      languageFilter.forEach(btn => {
+        btn.addEventListener('click', () => {
+          languageFilter.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          const lang = btn.getAttribute('data-lang');
+          filterVoicesByLanguage(lang);
+        });
+      });
+
+      // Playground generate button
+      playgroundGenerateBtn.addEventListener('click', generatePlaygroundSpeech);
+
+      // Batch generate button
+      batchGenerateBtn.addEventListener('click', generateBatchSpeech);
+    }
+
+    // Setup tab navigation
+    function setupTabs() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs
+          tabs.forEach(t => t.classList.remove('active'));
+
+          // Add active class to clicked tab
+          tab.classList.add('active');
+
+          // Hide all tab panels
+          document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.remove('active');
+          });
+
+          // Show the corresponding panel
+          const tabId = tab.getAttribute('data-tab');
+          document.getElementById(`${tabId}-panel`).classList.add('active');
+        });
+      });
+    }
+
+    // Populate the voice options in the playground
+    function populateVoiceOptions() {
+      if (!voiceOptions) return;
+
+      voiceOptions.innerHTML = '';
+
+      Object.entries(VOICES).forEach(([id, voice]) => {
+        const option = document.createElement('div');
+        option.className = 'voice-option';
+        option.setAttribute('data-voice-id', id);
+        option.setAttribute('data-language', voice.language);
+
+        option.innerHTML = `
+          <div class="voice-name">${voice.name}</div>
+          <div class="voice-info">
+            <span>${voice.language.toUpperCase()}</span>
+            <span>${voice.gender}</span>
+          </div>
+        `;
+
+        // Add event listener to select voice
+        option.addEventListener('click', () => {
+          if (option.classList.contains('disabled')) return;
+
+          document.querySelectorAll('.voice-option').forEach(opt => opt.classList.remove('selected'));
+          option.classList.add('selected');
+          selectedVoice = id;
+        });
+
+        voiceOptions.appendChild(option);
+      });
+    }
+
+    // Filter voices by language
+    function filterVoicesByLanguage(language) {
+      if (language === 'all') {
+        document.querySelectorAll('.voice-option').forEach(option => {
+          option.style.display = 'block';
+        });
+        return;
+      }
+
+      document.querySelectorAll('.voice-option').forEach(option => {
+        const voiceLanguage = option.getAttribute('data-language');
+        if (voiceLanguage === language) {
+          option.style.display = 'block';
+        } else {
+          option.style.display = 'none';
+        }
+      });
+    }
+
+    /**
+     * Handle detailed progress updates with file-level tracking
+     * @param {Object} progress - Progress update from TinyLM
+     */
+    function handleDetailedProgress(progress) {
+      const {
+        status,
+        type,
+        percentComplete,
+        message,
+        files,
+        overall
+      } = progress;
+
+      // Log message
+      let logMessage = `[${status}] (${type || 'unknown'}) ${message || ''}`;
+      addLogEntry(logMessage);
+
+      // Update progress bar for loading
+      if (type === 'tts_model' || type === 'model') {
+        if (typeof percentComplete === 'number') {
+          // Show progress container
+          progressContainer.style.display = 'block';
+
+          // Update progress bar width
+          progressBar.style.width = `${percentComplete}%`;
+
+          // Update percentage text
+          progressPercentage.textContent = `${percentComplete}%`;
+
+          // Update label text
+          progressLabel.textContent = message || 'Loading model...';
+        }
+
+        // Handle file-specific progress if available
+        if (Array.isArray(files) && files.length > 0) {
+          updateFileProgressDisplay(files, overall);
+        }
+
+        // Hide progress displays when complete
+        if (status === 'ready' || status === 'error') {
+          setTimeout(() => {
+            progressContainer.style.display = 'none';
+            clearFileProgressDisplay();
+          }, 1500);
+        }
+
+        // Update model status indicator
+        updateModelStatus(progress);
+      }
+    }
+
+    /**
+     * Update file progress display
+     * @param {Array} files - Array of file progress objects
+     * @param {Object} overall - Overall progress information
+     */
+    function updateFileProgressDisplay(files, overall) {
+      if (!fileProgressContainer) return;
+
+      // Show file container and overall stats
+      fileProgressContainer.style.display = 'block';
+      overallStats.style.display = 'flex';
+
+      // Track which files we've seen in this update
+      const currentFiles = new Set();
+
+      // Update existing file entries and create new ones
+      files.forEach(file => {
+        const fileId = file.id;
+        currentFiles.add(fileId);
+
+        // Get or create file progress element
+        let fileProgressElement = document.getElementById(`file-progress-${fileId}`);
+
+        if (!fileProgressElement) {
+          // Create new file progress element
+          fileProgressElement = document.createElement('div');
+          fileProgressElement.id = `file-progress-${fileId}`;
+          fileProgressElement.className = 'file-progress-item';
+          fileProgressElement.innerHTML = `
+                        <div class="file-progress-info">
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-stats">
+                                <span class="file-percentage">0%</span>
+                                <span class="file-size">0 / 0 B</span>
+                                <span class="file-speed"></span>
+                                <span class="file-eta"></span>
+                            </div>
+                        </div>
+                        <div class="file-progress-bar">
+                            <div class="file-progress-bar-fill"></div>
+                        </div>
+                    `;
+          fileProgressContainer.appendChild(fileProgressElement);
+          activeFiles.set(fileId, fileProgressElement);
+        }
+
+        // Update file progress element
+        updateFileProgressElement(fileProgressElement, file);
+
+        // Remove completed files after a delay
+        if (file.status === 'done' || file.status === 'error') {
+          setTimeout(() => {
+            if (fileProgressElement.parentNode) {
+              fileProgressElement.classList.add('fade-out');
+              setTimeout(() => {
+                if (fileProgressElement.parentNode) {
+                  fileProgressElement.parentNode.removeChild(fileProgressElement);
+                  activeFiles.delete(fileId);
+                }
+              }, 500); // Remove after fade animation
+            }
+          }, 1000); // Wait a second before starting fade
+        }
+      });
+
+      // Update overall stats if available
+      if (overall) {
+        updateOverallStats(overall);
+      }
+    }
+
+    /**
+     * Update individual file progress element
+     * @param {HTMLElement} element - File progress DOM element
+     * @param {Object} fileInfo - File progress information
+     */
+    function updateFileProgressElement(element, fileInfo) {
+      // Update percentage
+      const percentageElement = element.querySelector('.file-percentage');
+      if (percentageElement) {
+        percentageElement.textContent = `${fileInfo.percentComplete}%`;
+      }
+
+      // Update size info
+      const sizeElement = element.querySelector('.file-size');
+      if (sizeElement && fileInfo.bytesLoaded !== undefined) {
+        const loaded = formatBytes(fileInfo.bytesLoaded);
+        const total = formatBytes(fileInfo.bytesTotal);
+        sizeElement.textContent = `${loaded} / ${total}`;
+      }
+
+      // Update speed
+      const speedElement = element.querySelector('.file-speed');
+      if (speedElement && fileInfo.speed) {
+        speedElement.textContent = `${formatBytes(fileInfo.speed)}/s`;
+      }
+
+      // Update ETA
+      const etaElement = element.querySelector('.file-eta');
+      if (etaElement && fileInfo.timeRemaining) {
+        etaElement.textContent = `ETA: ${formatTime(fileInfo.timeRemaining)}`;
+      }
+
+      // Update progress bar
+      const progressBarFill = element.querySelector('.file-progress-bar-fill');
+      if (progressBarFill) {
+        progressBarFill.style.width = `${fileInfo.percentComplete}%`;
+      }
+
+      // Update status class
+      element.className = `file-progress-item file-status-${fileInfo.status}`;
+    }
+
+    /**
+     * Update overall stats display
+     * @param {Object} overall - Overall progress information
+     */
+    function updateOverallStats(overall) {
+      if (loadedSize) {
+        loadedSize.textContent = overall.formattedLoaded || '0 B';
+      }
+
+      if (totalSize) {
+        totalSize.textContent = overall.formattedTotal || '0 B';
+      }
+
+      if (downloadSpeed) {
+        downloadSpeed.textContent = overall.formattedSpeed || '0 B/s';
+      }
+
+      if (eta) {
+        eta.textContent = overall.formattedRemaining || '--';
+      }
+    }
+
+    /**
+     * Clear all file progress displays
+     */
+    function clearFileProgressDisplay() {
+      if (fileProgressContainer) {
+        fileProgressContainer.innerHTML = '';
+        fileProgressContainer.style.display = 'none';
+      }
+
+      if (overallStats) {
+        overallStats.style.display = 'none';
+      }
+
+      activeFiles.clear();
+    }
+
+    /**
+     * Update model status indicator
+     * @param {Object} progress - Progress update
+     */
+    function updateModelStatus(progress) {
+      const { status, type } = progress;
+
+      if (type === 'tts_model' || type === 'model') {
+        if (status === 'loading' || status === 'initiate' || status === 'progress') {
+          modelStatusValue.textContent = 'Loading...';
+          modelStatus.className = 'status-indicator yellow';
+          disableInterface();
+        } else if (status === 'ready' || status === 'done') {
+          modelStatusValue.textContent = 'Loaded';
+          modelStatus.className = 'status-indicator green';
+          enableInterface();
+        } else if (status === 'error') {
+          modelStatusValue.textContent = 'Error';
+          modelStatus.className = 'status-indicator red';
+          disableInterface();
+        } else if (status === 'offloaded') {
+          modelStatusValue.textContent = 'Not loaded';
+          modelStatus.className = 'status-indicator';
+          disableInterface();
+        }
+      }
+    }
+
+    /**
+     * Format bytes to human-readable size
+     * @param {number} bytes - Bytes to format
+     * @returns {string} Human-readable size
+     */
+    function formatBytes(bytes) {
+      if (bytes === 0 || !bytes) return '0 B';
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+    }
+
+    /**
+     * Format seconds to human-readable time
+     * @param {number} seconds - Seconds to format
+     * @returns {string} Human-readable time
+     */
+    function formatTime(seconds) {
+      if (!seconds || seconds === 0) return '';
+      if (seconds < 60) return `${Math.ceil(seconds)}s`;
+      if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.ceil(seconds % 60);
+        return `${minutes}m ${secs}s`;
+      }
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
+    }
+
+    // Load the selected model
+    async function loadModel() {
+      try {
+        const modelId = modelSelect.value;
+        addLogEntry(`Loading TTS model: ${modelId}`);
+
+        // Clear any existing progress display
+        clearFileProgressDisplay();
+
+        // UI updates
+        disableInterface();
+        loadModelBtn.disabled = true;
+
+        // Load the model
+        await tiny.init({
+          ttsModels: [modelId],
+          lazyLoad: false
+        });
+
+        // UI updates on success
+        addLogEntry(`Model ${modelId} loaded successfully!`);
+        enableInterface();
+
+      } catch (error) {
+        // UI updates on error
+        addLogEntry(`Error loading model: ${error.message}`);
+        disableInterface();
+      }
+    }
+
+    // Unload the current model
+    async function unloadModel() {
+      try {
+        const modelId = modelSelect.value;
+        addLogEntry(`Unloading TTS model: ${modelId}`);
+
+        // UI updates
+        disableInterface();
+        unloadModelBtn.disabled = true;
+
+        // Unload the model
+        await tiny.models.offloadTTS({ model: modelId });
+
+        // UI updates on success
+        addLogEntry(`Model ${modelId} unloaded successfully.`);
+        disableInterface();
+
+      } catch (error) {
+        // UI updates on error
+        addLogEntry(`Error unloading model: ${error.message}`);
+        enableInterface();
+      }
+    }
+
+    // Generate speech from text
+    async function generateSpeech() {
+      const text = ttsText.value.trim();
+      if (!text) {
+        addLogEntry('Error: Please enter text to speak');
+        return;
+      }
+
+      addLogEntry(`Generating speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+
+      // Show generating indicator
+      generatingText.style.display = 'inline-block';
+      generateText.style.display = 'none';
+      generateBtn.disabled = true;
+
+      try {
+        // Time the operation
+        const startTime = performance.now();
+
+        // Generate speech
+        const result = await tiny.audio.speech.create({
+          model: modelSelect.value,
+          input: text,
+          voice: voiceSelect.value,
+          response_format: audioFormat.value,
+          speed: parseFloat(speechSpeed.value)
+        });
+
+        const timeTaken = performance.now() - startTime;
+
+        // Hide generating indicator
+        generatingText.style.display = 'none';
+        generateText.style.display = 'inline-block';
+        generateBtn.disabled = false;
+
+        // Create an audio blob and URL
+        const audioBlob = new Blob([result.audio], { type: result.content_type });
+        currentAudioBlob = audioBlob;
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        // Update audio player
+        audioPlayer.src = audioUrl;
+        audioResult.style.display = 'block';
+
+        // Update download link
+        downloadBtn.href = audioUrl;
+        downloadBtn.download = `speech_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
+
+        // Update time display
+        ttsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
+
+        // Add to history
+        addToHistory(text, voiceSelect.value, parseFloat(speechSpeed.value), audioBlob, result.content_type, timeTaken);
+
+        addLogEntry(`Speech generated successfully in ${Math.round(timeTaken)}ms`);
+
+      } catch (error) {
+        // Hide generating indicator
+        generatingText.style.display = 'none';
+        generateText.style.display = 'inline-block';
+        generateBtn.disabled = false;
+
+        addLogEntry(`Error generating speech: ${error.message}`);
+      }
+    }
+
+    // Generate speech in the playground
+    async function generatePlaygroundSpeech() {
+      const text = playgroundText.value.trim();
+      if (!text) {
+        addLogEntry('Error: Please enter text to speak');
+        return;
+      }
+
+      // Get selected voice
+      const selectedVoiceElem = document.querySelector('.voice-option.selected');
+      if (!selectedVoiceElem) {
+        addLogEntry('Error: Please select a voice');
+        return;
+      }
+
+      const voiceId = selectedVoiceElem.getAttribute('data-voice-id');
+      const voiceName = VOICES[voiceId].name;
+
+      addLogEntry(`Generating speech with voice ${voiceName} for: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
+
+      // Disable the button during generation
+      playgroundGenerateBtn.disabled = true;
+
+      try {
+        // Time the operation
+        const startTime = performance.now();
+
+        // Generate speech
+        const result = await tiny.audio.speech.create({
+          model: modelSelect.value,
+          input: text,
+          voice: voiceId,
+          response_format: audioFormat.value,
+          speed: parseFloat(playgroundSpeed.value)
+        });
+
+        const timeTaken = performance.now() - startTime;
+
+        // Re-enable the button
+        playgroundGenerateBtn.disabled = false;
+
+        // Create an audio blob and URL
+        const audioBlob = new Blob([result.audio], { type: result.content_type });
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        // Update audio player
+        playgroundAudioPlayer.src = audioUrl;
+        playgroundAudioResult.style.display = 'block';
+        playgroundVoiceName.textContent = `${voiceName} (${VOICES[voiceId].gender}, ${VOICES[voiceId].language.toUpperCase()})`;
+
+        // Update download link
+        playgroundDownloadBtn.href = audioUrl;
+        playgroundDownloadBtn.download = `voice_${voiceId}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}`;
+
+        // Update time display
+        playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
+
+        // Add to history
+        addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), audioBlob, result.content_type, timeTaken);
+
+        addLogEntry(`Playground speech generated successfully in ${Math.round(timeTaken)}ms`);
+
+      } catch (error) {
+        // Re-enable the button
+        playgroundGenerateBtn.disabled = false;
+
+        addLogEntry(`Error generating playground speech: ${error.message}`);
+      }
+    }
+
+    // Generate batch speech
+    async function generateBatchSpeech() {
+      const texts = batchText.value.trim().split('\n').filter(t => t.trim());
+      if (texts.length === 0) {
+        addLogEntry('Error: Please enter at least one text line');
+        return;
+      }
+
+      addLogEntry(`Generating batch speech for ${texts.length} texts`);
+
+      // Disable the button during generation
+      batchGenerateBtn.disabled = true;
+
+      // Clear previous results
+      noBatchResults.style.display = 'none';
+      // Keep previous results unless cleared manually
+
+      // Create result container
+      const batchResultDiv = document.createElement('div');
+      batchResultDiv.className = 'batch-result';
+      batchResultDiv.innerHTML = `
+        <h3>Batch Generation - ${new Date().toLocaleTimeString()}</h3>
+        <div class="batch-info">
+          <div>Voice: ${VOICES[batchVoice.value].name} • Speed: ${batchSpeed.value}x • ${texts.length} items</div>
+          <div class="batch-progress">
+            <span class="batch-progress-text">Generating...</span>
+          </div>
+        </div>
+        <div class="batch-items"></div>
+      `;
+
+      // Add to the results container
+      batchResults.insertBefore(batchResultDiv, batchResults.firstChild);
+
+      const batchItems = batchResultDiv.querySelector('.batch-items');
+      const batchProgressText = batchResultDiv.querySelector('.batch-progress-text');
+
+      // Process each text
+      let completed = 0;
+      const totalItems = texts.length;
+      const startTime = performance.now();
+
+      for (let i = 0; i < texts.length; i++) {
+        const text = texts[i];
+
+        // Update progress
+        batchProgressText.textContent = `Generating ${i + 1}/${totalItems}...`;
+
+        try {
+          // Generate speech for this text
+          const result = await tiny.audio.speech.create({
+            model: modelSelect.value,
+            input: text,
+            voice: batchVoice.value,
+            response_format: audioFormat.value,
+            speed: parseFloat(batchSpeed.value)
+          });
+
+          // Create an audio blob and URL
+          const audioBlob = new Blob([result.audio], { type: result.content_type });
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          // Create item
+          const itemDiv = document.createElement('div');
+          itemDiv.className = 'audio-panel';
+          itemDiv.innerHTML = `
+            <div class="text">${text.length > 100 ? text.substring(0, 100) + '...' : text}</div>
+            <audio controls src="${audioUrl}" class="audio-player"></audio>
+            <a href="${audioUrl}" download="batch_${i + 1}_${new Date().toISOString().replace(/[-:.]/g, '')}.${audioFormat.value}" class="download-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download
+            </a>
+          `;
+
+          // Add to batch items
+          batchItems.appendChild(itemDiv);
+
+          // Add to history
+          addToHistory(text, batchVoice.value, parseFloat(batchSpeed.value), audioBlob, result.content_type);
+
+          completed++;
+
+        } catch (error) {
+          addLogEntry(`Error generating batch item ${i + 1}: ${error.message}`);
+
+          // Create error item
+          const errorDiv = document.createElement('div');
+          errorDiv.className = 'audio-panel';
+          errorDiv.innerHTML = `
+            <div class="text">${text.length > 100 ? text.substring(0, 100) + '...' : text}</div>
+            <div class="error" style="color: var(--error-color);">Error: ${error.message}</div>
+          `;
+
+          // Add to batch items
+          batchItems.appendChild(errorDiv);
+        }
+      }
+
+      // Final time
+      const timeTaken = performance.now() - startTime;
+
+      // Update progress to complete
+      batchProgressText.textContent = `Completed ${completed}/${totalItems} in ${Math.round(timeTaken)}ms`;
+
+      // Re-enable the button
+      batchGenerateBtn.disabled = false;
+
+      addLogEntry(`Batch generation completed: ${completed}/${totalItems} items in ${Math.round(timeTaken)}ms`);
+    }
+
+    // Add to generation history
+    function addToHistory(text, voice, speed, audioBlob, contentType, timeTaken = 0) {
+      const historyItem = {
+        id: Date.now(),
+        text,
+        voice,
+        speed,
+        audioBlob,
+        contentType,
+        time: new Date(),
+        timeTaken
+      };
+
+      generationHistory.unshift(historyItem);
+
+      // Limit history size
+      if (generationHistory.length > 50) {
+        generationHistory.pop();
+      }
+
+      // Update history display
+      updateHistoryDisplay();
+    }
+
+    // Update history display
+    function updateHistoryDisplay() {
+      if (!historyList) return;
+
+      if (generationHistory.length === 0) {
+        historyList.innerHTML = '<div>No generation history yet.</div>';
+        return;
+      }
+
+      historyList.innerHTML = '';
+
+      generationHistory.forEach(item => {
+        const audioUrl = URL.createObjectURL(item.audioBlob);
+        const voiceInfo = VOICES[item.voice] || { name: item.voice, language: 'unknown' };
+
+        const historyItemDiv = document.createElement('div');
+        historyItemDiv.className = 'history-item';
+        historyItemDiv.innerHTML = `
+          <div class="history-text">${item.text.length > 100 ? item.text.substring(0, 100) + '...' : item.text}</div>
+          <div class="history-info">
+            <div>${voiceInfo.name} • ${item.speed}x speed</div>
+            <div>${item.time.toLocaleTimeString()}</div>
+          </div>
+          <audio controls src="${audioUrl}" class="audio-player"></audio>
+          <div style="margin-top: 0.5rem;">
+            <a href="${audioUrl}" download="history_${item.id}.${item.contentType === 'audio/mpeg' ? 'mp3' : 'wav'}" class="download-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download Audio
+            </a>
+            ${item.timeTaken ? `<span class="tts-time">Generated in ${Math.round(item.timeTaken)}ms</span>` : ''}
+          </div>
+        `;
+
+        historyList.appendChild(historyItemDiv);
+      });
+    }
+
+    // Add an entry to the log panel
+    function addLogEntry(message) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logPanel.appendChild(entry);
+      logPanel.scrollTop = logPanel.scrollHeight;
+      console.log(message);
+    }
+
+    // Disable interface during loading/processing
+    function disableInterface() {
+      // Model controls
+      modelSelect.disabled = true;
+      audioFormat.disabled = true;
+      unloadModelBtn.disabled = true;
+
+      // Basic TTS controls
+      ttsText.disabled = true;
+      speechSpeed.disabled = true;
+      voiceSelect.disabled = true;
+      generateBtn.disabled = true;
+
+      // Playground controls
+      playgroundText.disabled = true;
+      playgroundSpeed.disabled = true;
+      playgroundGenerateBtn.disabled = true;
+      document.querySelectorAll('.voice-option').forEach(option => {
+        option.classList.add('disabled');
+      });
+      // Batch controls
+      batchText.disabled = true;
+      batchVoice.disabled = true;
+      batchSpeed.disabled = true;
+      batchGenerateBtn.disabled = true;
+    }
+
+    // Enable interface after model is loaded
+    function enableInterface() {
+      // Model controls
+      modelSelect.disabled = false;
+      audioFormat.disabled = false;
+      loadModelBtn.disabled = false;
+      unloadModelBtn.disabled = false;
+
+      // Basic TTS controls
+      ttsText.disabled = false;
+      speechSpeed.disabled = false;
+      voiceSelect.disabled = false;
+      generateBtn.disabled = false;
+
+      // Playground controls
+      playgroundText.disabled = false;
+      playgroundSpeed.disabled = false;
+      playgroundGenerateBtn.disabled = false;
+      document.querySelectorAll('.voice-option').forEach(option => {
+        option.classList.remove('disabled');
+      });
+
+      // Batch controls
+      batchText.disabled = false;
+      batchVoice.disabled = false;
+      batchSpeed.disabled = false;
+      batchGenerateBtn.disabled = false;
+    }
+
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+
+</html>
