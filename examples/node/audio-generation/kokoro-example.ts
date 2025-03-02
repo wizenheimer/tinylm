@@ -1,16 +1,13 @@
 /**
  * Text-to-Speech Example with TinyLM
  *
- * This example demonstrates the speech generation capabilities:
- * - Hardware capability detection
- * - TTS model loading with progress tracking
- * - Speech generation with different voices
- * - Speed adjustments
- * - Saving audio to files
- * - Multiple languages support
+ * This demonstrates speech generation with TinyLM, including:
+ * - Basic speech generation
+ * - Streaming for better handling of long texts
+ * - Comparing streaming vs non-streaming approaches
  */
 
-import { TinyLM, ProgressUpdate, FileInfo, OverallProgress } from '../../../src/index';
+import { TinyLM, ProgressUpdate, SpeechResult, SpeechStreamResult } from '../../../src/index';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,31 +16,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Format bytes to human-readable size
-function formatBytes(bytes: number | undefined): string {
-  if (bytes === 0 || !bytes) return '0 B';
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
-}
-
-// Format seconds to human-readable time
-function formatTime(seconds: number | null): string {
-  if (!seconds || seconds === 0) return '';
-  if (seconds < 60) return `${Math.ceil(seconds)}s`;
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.ceil(seconds % 60);
-    return `${minutes}m ${secs}s`;
-  }
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-}
-
-// Format overall progress information nicely
+// Format progress for console output
 function formatProgress(progress: ProgressUpdate): string {
-  const { type, status, percentComplete, message, files, overall } = progress;
+  const { type, status, percentComplete, message } = progress;
 
   // Progress bar for numeric progress
   let progressBar = '';
@@ -56,66 +31,10 @@ function formatProgress(progress: ProgressUpdate): string {
       `] ${percentComplete}%`;
   }
 
-  // Color based on type
-  let color = '';
-  let resetColor = '';
-  if (typeof process !== 'undefined' && process.stdout &&
-    // TypeScript-safe check for hasColors method
-    typeof (process.stdout as any).hasColors === 'function' &&
-    (process.stdout as any).hasColors()) {
-    // Terminal colors
-    switch (type) {
-      case 'system': color = '\x1b[36m'; break; // Cyan
-      case 'tts_model': color = '\x1b[32m'; break; // Green
-      case 'speech': color = '\x1b[35m'; break; // Magenta
-      default: color = ''; break;
-    }
-    resetColor = '\x1b[0m';
-  }
-
   // Format output lines
-  let output = `${color}[${status}]${resetColor} ${type ? `(${type})` : ''}`;
+  let output = `[${status}] ${type ? `(${type})` : ''}`;
   if (progressBar) output += ` ${progressBar}`;
   if (message) output += ` ${message}`;
-
-  // Add overall stats if available
-  const overallProgress = overall as OverallProgress | undefined;
-  if (overallProgress && type === 'tts_model' && status === 'loading') {
-    output += `\n  Total: ${overallProgress.formattedLoaded}/${overallProgress.formattedTotal}`;
-    if (overallProgress.formattedSpeed) {
-      output += ` at ${overallProgress.formattedSpeed}`;
-    }
-    if (overallProgress.formattedRemaining) {
-      output += ` - ETA: ${overallProgress.formattedRemaining}`;
-    }
-  }
-
-  // Add file-specific progress if available
-  if (Array.isArray(files) && files.length > 0 && type === 'tts_model') {
-    // Show active files first
-    const activeFiles = files.filter(f => f.status !== 'done' && f.status !== 'error');
-    if (activeFiles.length > 0) {
-      output += '\n  Active downloads:';
-      activeFiles.forEach((file: FileInfo) => {
-        output += `\n    ${file.name}: ${file.percentComplete}% (${formatBytes(file.bytesLoaded)}/${formatBytes(file.bytesTotal)})`;
-        if (file.speed > 0) {
-          output += ` at ${formatBytes(file.speed)}/s`;
-        }
-        if (file.timeRemaining) {
-          output += ` - ETA: ${formatTime(file.timeRemaining)}`;
-        }
-      });
-    }
-
-    // Show recently completed files (last 2)
-    const doneFiles = files.filter(f => f.status === 'done').slice(-2);
-    if (doneFiles.length > 0) {
-      output += '\n  Recently completed:';
-      doneFiles.forEach((file: FileInfo) => {
-        output += `\n    ${file.name}: Complete (${formatBytes(file.bytesTotal)})`;
-      });
-    }
-  }
 
   return output;
 }
@@ -129,6 +48,11 @@ function ensureOutputDirExists(): string {
   return outputDir;
 }
 
+// Type guard to check if result is a streaming result
+function isStreamResult(result: SpeechResult | SpeechStreamResult): result is SpeechStreamResult {
+  return 'chunks' in result && Array.isArray((result as SpeechStreamResult).chunks);
+}
+
 // Main text-to-speech example
 async function runTextToSpeechExample(): Promise<void> {
   console.log('=== TinyLM Text-to-Speech Example ===');
@@ -139,15 +63,9 @@ async function runTextToSpeechExample(): Promise<void> {
   // Create a new TinyLM instance with custom progress tracking
   const tiny = new TinyLM({
     progressCallback: (progress: ProgressUpdate) => {
-      try {
-        console.log(formatProgress(progress));
-      } catch (error) {
-        // Fallback to simple logging
-        console.log(`[${progress.status}] ${progress.message || ''}`);
-        console.error('Error formatting progress:', error);
-      }
+      console.log(formatProgress(progress));
     },
-    progressThrottleTime: 100, // Update frequently to show progress
+    progressThrottleTime: 100
   });
 
   try {
@@ -163,150 +81,70 @@ async function runTextToSpeechExample(): Promise<void> {
     // Initialize TinyLM
     console.log("\nInitializing TinyLM...");
     await tiny.init({
-      ttsModels: ['onnx-community/Kokoro-82M-v1.0-ONNX'], // The TTS model from the implementation
+      ttsModels: ['onnx-community/Kokoro-82M-v1.0-ONNX']
     });
 
-    // Example 1: Basic speech generation
+    // Example 1: Basic speech generation (non-streaming)
     console.log("\n=== Example 1: Basic Speech Generation ===");
+    const shortText = "Welcome to TinyLM. This is a library for running language models and text-to-speech in browsers and Node.js.";
+    console.log(`\nGenerating speech for: "${shortText}"`);
 
-    const text = "Hello world! This is an example of text-to-speech with TinyLM.";
-    console.log(`\nGenerating speech for: "${text}"`);
-
-    const outputPath = path.join(outputDir, 'basic_speech.wav');
-
-    const result = await tiny.audio.speech.create({
+    const basicResult = await tiny.audio.speech.create({
       model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-      input: text,
-      voice: 'af', // Default voice
-      response_format: 'wav'
-    });
-
-    // Save the audio buffer to a file
-    fs.writeFileSync(outputPath, Buffer.from(result.audio));
-    console.log(`\nSpeech saved to: ${outputPath}`);
-    console.log(`Generation time: ${result._tinylm?.time_ms}ms`);
-
-    // Example 2: Using different voices
-    console.log("\n=== Example 2: Different Voices ===");
-
-    // Create a function to generate speech with different voices
-    async function generateWithVoice(voice: string): Promise<void> {
-      console.log(`\nGenerating speech with voice: ${voice}`);
-      const text = `This is an example of the ${voice} voice.`;
-
-      const result = await tiny.audio.speech.create({
-        model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-        input: text,
-        voice,
-        response_format: 'wav'
-      });
-
-      const outputPath = path.join(outputDir, `${voice}_example.wav`);
-      fs.writeFileSync(outputPath, Buffer.from(result.audio));
-      console.log(`Speech saved to: ${outputPath}`);
-    }
-
-    // Generate examples with different voices
-    await generateWithVoice('af_bella');   // American female
-    await generateWithVoice('am_adam');    // American male
-    await generateWithVoice('bf_emma');    // British female
-
-    // Example 3: Speed adjustment
-    console.log("\n=== Example 3: Speed Adjustment ===");
-
-    const speedText = "This is a demonstration of different speech speeds.";
-
-    async function generateWithSpeed(speed: number): Promise<void> {
-      console.log(`\nGenerating speech with speed: ${speed}`);
-
-      const result = await tiny.audio.speech.create({
-        model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-        input: speedText,
-        voice: 'af_bella',
-        speed,
-        response_format: 'wav'
-      });
-
-      const outputPath = path.join(outputDir, `speed_${speed.toString().replace('.', '_')}.wav`);
-      fs.writeFileSync(outputPath, Buffer.from(result.audio));
-      console.log(`Speech saved to: ${outputPath}`);
-    }
-
-    // Generate examples with different speeds
-    await generateWithSpeed(0.8); // Slower
-    await generateWithSpeed(1.0); // Normal
-    await generateWithSpeed(1.2); // Faster
-
-    // Example 4: Multi-language support
-    console.log("\n=== Example 4: Multi-language Support ===");
-
-    async function generateInLanguage(text: string, voice: string, description: string): Promise<void> {
-      console.log(`\nGenerating speech in ${description}`);
-
-      const result = await tiny.audio.speech.create({
-        model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-        input: text,
-        voice,
-        response_format: 'wav'
-      });
-
-      const outputPath = path.join(outputDir, `${voice}_language_example.wav`);
-      fs.writeFileSync(outputPath, Buffer.from(result.audio));
-      console.log(`Speech saved to: ${outputPath}`);
-    }
-
-    // Generate examples in different languages
-    await generateInLanguage("Hello, this is English text with an American accent.", "af_bella", "American English");
-    await generateInLanguage("Hello, this is English text with a British accent.", "bf_emma", "British English");
-    await generateInLanguage("Hola, este es un texto en español.", "ef_dora", "Spanish");
-    await generateInLanguage("नमस्ते, यह हिंदी में एक उदाहरण है।", "hf_alpha", "Hindi");
-
-    // Example 5: Advanced use - Generate a paragraph with natural pauses
-    console.log("\n=== Example 5: Advanced Use - Paragraph with Natural Pauses ===");
-
-    const paragraph = "Welcome to the world of speech synthesis. Artificial voices have come a long way. They now sound much more natural and expressive. This technology enables many accessibility features. It's also used in virtual assistants and automated systems.";
-
-    // Split into sentences and add pauses
-    const sentences = paragraph.split('.');
-    const sentencesWithPauses = sentences.map(s => s.trim()).filter(s => s.length > 0);
-
-    console.log(`\nGenerating paragraph speech with ${sentencesWithPauses.length} sentences`);
-
-    // Generate speech for the full paragraph
-    const paragraphResult = await tiny.audio.speech.create({
-      model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-      input: paragraph,
+      input: shortText,
       voice: 'af_bella',
       response_format: 'wav'
     });
 
-    const paragraphOutputPath = path.join(outputDir, 'paragraph_speech.wav');
-    fs.writeFileSync(paragraphOutputPath, Buffer.from(paragraphResult.audio));
-    console.log(`Full paragraph speech saved to: ${paragraphOutputPath}`);
+    // Output result is a regular SpeechResult
+    if (!isStreamResult(basicResult)) {
+      const basicPath = path.join(outputDir, 'basic_speech.wav');
+      fs.writeFileSync(basicPath, Buffer.from(basicResult.audio));
+      console.log(`Speech saved to: ${basicPath}`);
+      console.log(`Generation time: ${basicResult._tinylm?.time_ms}ms`);
+    }
 
-    // Example 6: Offloading the model
-    console.log("\n=== Example 6: Model Management ===");
+    // Example 2: Streaming speech generation for long text
+    console.log("\n=== Example 2: Streaming TTS for Long Text ===");
+    const longText = `
+    Streaming text-to-speech processes content in semantically meaningful chunks.
+    This creates more natural speech with proper phrasing and intonation.
+    Unlike non-streaming approaches, this maintains consistent prosody across sentence boundaries.
+    The implementation handles sentence boundaries, ensuring natural pauses between thoughts.
+    It's particularly useful for longer texts like articles or stories.
+    When texts are processed as a whole, long content can lose natural cadence and timing.
+    Streaming solves this by breaking content into manageable pieces.
+    Each piece receives appropriate voice styling based on its content and length.
+    The result is more human-like speech that's easier to follow and understand.
+    `;
 
-    // Get the list of loaded models
-    console.log("\nCurrently loaded TTS models:", tiny.models.listTTS());
+    console.log(`\nGenerating streaming speech for long text (${longText.length} characters)`);
 
-    // Offload the model
-    console.log("\nOffloading TTS model...");
-    const offloadResult = await tiny.models.offloadTTS({
-      model: 'onnx-community/Kokoro-82M-v1.0-ONNX'
+    // Generate speech with streaming enabled
+    const streamResult = await tiny.audio.speech.create({
+      model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
+      input: longText,
+      voice: 'af_bella',
+      response_format: 'wav',
+      stream: true // Enable streaming
     });
 
-    console.log("Model offloaded:", offloadResult);
-    console.log("TTS models still loaded:", tiny.models.listTTS());
+    // Check if result is a streaming result
+    if (isStreamResult(streamResult)) {
+      // Instead of trying to concatenate the chunks:
+      console.log("\nNOTE: Streaming mode produces multiple audio files - one per chunk.");
+      console.log("For production use, consider using a proper audio library for concatenation.");
 
-    // Re-load the model
-    console.log("\nRe-loading TTS model...");
-    await tiny.models.loadTTS({
-      model: 'onnx-community/Kokoro-82M-v1.0-ONNX'
-    });
-
-    console.log("TTS models after reloading:", tiny.models.listTTS());
-
+      // Save each chunk separately
+      for (let i = 0; i < streamResult.chunks.length; i++) {
+        const chunk = streamResult.chunks[i];
+        if (chunk) {
+          const chunkPath = path.join(outputDir, `stream_chunk_${i+1}.wav`);
+          fs.writeFileSync(chunkPath, Buffer.from(chunk.audio));
+          console.log(`Chunk ${i+1}: "${chunk.text.substring(0, 40)}..." saved to ${path.basename(chunkPath)}`);
+        }
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("\nError during execution:", errorMessage);
