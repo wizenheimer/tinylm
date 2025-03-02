@@ -1,12 +1,15 @@
 /**
  * TTSEngine - Text-to-speech engine for TinyLM
+ * Rewritten to match KokoroJS exactly
  */
 
 import { StyleTextToSpeech2Model, AutoTokenizer, Tensor, RawAudio } from "@huggingface/transformers";
 import { phonemize } from './phonemize';
 import { getVoiceData, VOICES } from './voices';
 import { splitTextIntoSentences, ensureSafeTokenLength } from './TextSplitter';
+import { analyzeAudioData } from './utils';
 
+// FIXED: Ensure constants match KokoroJS exactly
 const STYLE_DIM = 256;
 const SAMPLE_RATE = 24000;
 
@@ -16,6 +19,7 @@ const SAMPLE_RATE = 24000;
 export interface AudioChunk {
   text: string;
   audio: ArrayBuffer;
+  phonemes?: string;
 }
 
 /**
@@ -52,6 +56,8 @@ export class TTSEngine {
       this.tokenizer = await AutoTokenizer.from_pretrained(model, {
         progress_callback: options.onProgress
       });
+
+      console.log("TTS model and tokenizer loaded successfully");
     } catch (error) {
       console.error('Error loading TTS model:', error);
       throw error;
@@ -75,50 +81,94 @@ export class TTSEngine {
       stream = false, // New streaming parameter
     } = options;
 
+    // Validate voice exists
     if (!VOICES.hasOwnProperty(voice)) {
       throw new Error(`Voice "${voice}" not found. Should be one of: ${Object.keys(VOICES).join(", ")}.`);
     }
 
     try {
-      const language = voice.at(0); // "a" or "b"
+      // Get language code from voice identifier (first letter)
+      const language = voice.substring(0, 1) as 'a' | 'b' | 'h' | 'e' | 'f' | 'z';
+      console.log(`Using voice '${voice}' with language code '${language}'`);
 
-      // If streaming is disabled, handle text as a single chunk (for backward compatibility)
-      if (!stream) {
-        // Process the entire text in a single call
-        const phonemes = await phonemize(text, language);
-        const { input_ids } = this.tokenizer(phonemes, { truncation: true });
+      // If streaming is disabled and text is short, handle as a single chunk
+      if (!stream && text.length < 500) {
+        console.log("Processing as single chunk (stream=false)");
 
-        // Select voice style based on number of input tokens
-        const num_tokens = Math.min(Math.max(
-          input_ids.dims.at(-1) - 2, // Without padding
-          0,
-        ), 509);
+        try {
+          // Process the entire text in a single call
+          const phonemes = await phonemize(text, language);
+          console.log(`Phonemized text: "${phonemes.substring(0, 50)}${phonemes.length > 50 ? '...' : ''}"`);
 
-        // Load voice style
-        const data = await getVoiceData(voice);
-        const offset = num_tokens * STYLE_DIM;
-        const voiceData = data.slice(offset, offset + STYLE_DIM);
+          const tokenizeResult = this.tokenizer(phonemes, { truncation: true });
+          const input_ids = tokenizeResult.input_ids;
 
-        // Prepare model inputs
-        const inputs = {
-          input_ids,
-          style: new Tensor("float32", voiceData, [1, STYLE_DIM]),
-          speed: new Tensor("float32", [speed], [1]),
-        };
+          console.log(`Tokenized to ${input_ids.dims.at(-1)} tokens`);
 
-        // Generate audio
-        const { waveform } = await this.model(inputs);
+          // Select voice style based on number of input tokens
+          const num_tokens = Math.min(Math.max(
+            input_ids.dims.at(-1) - 2, // Without padding
+            0,
+          ), 509);
 
-        if (!waveform || !waveform.data) {
-          throw new Error('Model returned null or undefined waveform');
+          console.log(`Using ${num_tokens} tokens for voice style selection`);
+
+          // Load voice style
+          const data = await getVoiceData(voice);
+          const offset = num_tokens * STYLE_DIM;
+
+          if (offset + STYLE_DIM > data.length) {
+            console.warn(`Warning: Offset ${offset} exceeds voice data length ${data.length}, using fallback`);
+          }
+
+          const voiceData = offset + STYLE_DIM <= data.length
+            ? data.slice(offset, offset + STYLE_DIM)
+            : data.slice(0, STYLE_DIM); // Fallback to first style
+
+          // Prepare model inputs exactly like KokoroJS
+          const inputs = {
+            input_ids,
+            style: new Tensor("float32", voiceData, [1, STYLE_DIM]),
+            speed: new Tensor("float32", [speed], [1]),
+          };
+
+          console.log("Generating audio...");
+
+          // Generate audio - use direct model call like KokoroJS
+          const output = await this.model(inputs);
+
+          if (!output || !output.waveform || !output.waveform.data) {
+            throw new Error('Model returned null or undefined waveform');
+          }
+
+
+          // Skip audio analysis in normal operation to avoid stack overflow
+          // Only uncomment when debugging
+          try {
+            if (output.waveform.data.length < 50000) { // Only analyze smaller arrays
+              analyzeAudioData(output.waveform.data, "Model Output");
+            } else {
+              console.log(`Skipping analysis of large waveform (${output.waveform.data.length} samples)`);
+            }
+          } catch (analyzeError) {
+            console.warn("Error analyzing audio data:", analyzeError);
+          }
+
+          // Use RawAudio to handle conversion properly
+          const rawAudio = new RawAudio(output.waveform.data, SAMPLE_RATE);
+
+          // Convert to blob/buffer and return
+          return await rawAudio.toBlob().arrayBuffer();
+
+        } catch (error) {
+          console.error("Error in single-chunk processing:", error);
+          throw error;
         }
-
-        // Use RawAudio to handle the audio data
-        const rawAudio = new RawAudio(waveform.data, SAMPLE_RATE);
-        return await rawAudio.toBlob().arrayBuffer();
       }
       else {
         // Streaming mode: Process text in chunks
+        console.log("Processing with streaming enabled or text is long");
+
         // Split text into sentences
         const sentences = splitTextIntoSentences(text);
         console.log(`Split text into ${sentences.length} sentences for streaming`);
@@ -130,58 +180,71 @@ export class TTSEngine {
           allChunks.push(...safeChunks);
         }
 
+        console.log(`Processing ${allChunks.length} total chunks`);
+
         // Process each chunk
         const audioChunks: AudioChunk[] = [];
 
         for (const chunk of allChunks) {
           if (!chunk.trim()) continue; // Skip empty chunks
 
-          // Generate phonemes for this chunk
-          const phonemes = await phonemize(chunk, language);
-          const { input_ids } = this.tokenizer(phonemes, { truncation: true });
+          try {
+            // Generate phonemes for this chunk
+            const phonemes = await phonemize(chunk, language);
+            const tokenizeResult = this.tokenizer(phonemes, { truncation: true });
+            const input_ids = tokenizeResult.input_ids;
 
-          // Select voice style based on number of input tokens
-          const num_tokens = Math.min(Math.max(
-            input_ids.dims.at(-1) - 2,
-            0,
-          ), 509);
+            // Select voice style based on number of input tokens
+            const num_tokens = Math.min(Math.max(
+              input_ids.dims.at(-1) - 2,
+              0,
+            ), 509);
 
-          // Load voice style
-          const data = await getVoiceData(voice);
-          const offset = num_tokens * STYLE_DIM;
-          const voiceData = data.slice(offset, offset + STYLE_DIM);
+            // Load voice style
+            const data = await getVoiceData(voice);
+            const offset = num_tokens * STYLE_DIM;
 
-          // Prepare inputs
-          const inputs = {
-            input_ids,
-            style: new Tensor("float32", voiceData, [1, STYLE_DIM]),
-            speed: new Tensor("float32", [speed], [1]),
-          };
+            const voiceData = offset + STYLE_DIM <= data.length
+              ? data.slice(offset, offset + STYLE_DIM)
+              : data.slice(0, STYLE_DIM); // Fallback
 
-          // Generate audio for this chunk
-          const { waveform } = await this.model(inputs);
+            // Prepare inputs
+            const inputs = {
+              input_ids,
+              style: new Tensor("float32", voiceData, [1, STYLE_DIM]),
+              speed: new Tensor("float32", [speed], [1]),
+            };
 
-          if (!waveform || !waveform.data) {
-            console.warn('Model returned null or undefined waveform for chunk:', chunk);
-            continue;
+            // Generate audio for this chunk
+            const output = await this.model(inputs);
+
+            if (!output || !output.waveform || !output.waveform.data) {
+              console.warn('Model returned null or undefined waveform for chunk:', chunk);
+              continue;
+            }
+
+            // Create audio buffer for this chunk
+            const rawAudio = new RawAudio(output.waveform.data, SAMPLE_RATE);
+            const audioBuffer = await rawAudio.toBlob().arrayBuffer();
+
+            // Add to results
+            audioChunks.push({
+              text: chunk,
+              audio: audioBuffer,
+              phonemes
+            });
+
+          } catch (chunkError) {
+            console.error(`Error processing chunk "${chunk}":`, chunkError);
+            // Continue with other chunks
           }
-
-          // Create audio buffer for this chunk
-          const rawAudio = new RawAudio(waveform.data, SAMPLE_RATE);
-          const audioBuffer = await rawAudio.toBlob().arrayBuffer();
-
-          // Add to results
-          audioChunks.push({
-            text: chunk,
-            audio: audioBuffer
-          });
         }
 
         return audioChunks;
       }
     } catch (error) {
       console.error('Error in generateSpeech:', error);
-      throw error;
+      throw new Error(`Speech generation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -198,7 +261,7 @@ export class TTSEngine {
     }
 
     try {
-      const language = voice.at(0);
+      const language = voice.substring(0, 1);
       const audioChunks: Float32Array[] = [];
       let totalLength = 0;
 
@@ -212,7 +275,8 @@ export class TTSEngine {
 
         // Process this sentence
         const phonemes = await phonemize(sentence, language);
-        const { input_ids } = this.tokenizer(phonemes, { truncation: true });
+        const tokenizeResult = this.tokenizer(phonemes, { truncation: true });
+        const input_ids = tokenizeResult.input_ids;
 
         // Select voice style based on number of input tokens
         const num_tokens = Math.min(Math.max(input_ids.dims.at(-1) - 2, 0), 509);
@@ -220,7 +284,10 @@ export class TTSEngine {
         // Load voice style
         const data = await getVoiceData(voice);
         const offset = num_tokens * STYLE_DIM;
-        const voiceData = data.slice(offset, offset + STYLE_DIM);
+
+        const voiceData = offset + STYLE_DIM <= data.length
+          ? data.slice(offset, offset + STYLE_DIM)
+          : data.slice(0, STYLE_DIM); // Fallback
 
         // Generate audio
         const inputs = {
@@ -229,11 +296,11 @@ export class TTSEngine {
           speed: new Tensor("float32", [speed], [1]),
         };
 
-        const { waveform } = await this.model(inputs);
+        const output = await this.model(inputs);
 
-        if (waveform && waveform.data) {
+        if (output && output.waveform && output.waveform.data) {
           // Add audio data
-          const sentenceAudio = new Float32Array(waveform.data);
+          const sentenceAudio = new Float32Array(output.waveform.data);
           audioChunks.push(sentenceAudio);
           totalLength += sentenceAudio.length;
 
@@ -262,5 +329,21 @@ export class TTSEngine {
       console.error('Error in generateCombinedSpeech:', error);
       throw error;
     }
+  }
+
+  /**
+   * Validate voice is available and properly formatted
+   * @private
+   * @param {string} voice - Voice ID to validate
+   * @returns {string} Language code
+   */
+  private _validateVoice(voice: string): string {
+    if (!VOICES.hasOwnProperty(voice)) {
+      console.error(`Voice "${voice}" not found. Available voices:`, Object.keys(VOICES));
+      throw new Error(`Voice "${voice}" not found. Should be one of: ${Object.keys(VOICES).join(", ")}.`);
+    }
+
+    const language = voice.substring(0, 1);
+    return language;
   }
 }

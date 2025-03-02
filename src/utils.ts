@@ -123,3 +123,92 @@ export function logAudioDebug(audioData: any, stage: string = 'unknown') {
 
   console.log("[Audio Debug]", stats);
 }
+
+/**
+ * Safely analyze audio data without causing stack overflows
+ */
+export function analyzeAudioData(audioData: Float32Array | Int16Array | null, label: string = "Unknown"): void {
+  if (!audioData || audioData.length === 0) {
+    console.warn(`[Audio Analysis] ${label}: No audio data or empty array`);
+    return;
+  }
+
+  // Sample size instead of analyzing entire array
+  const MAX_ANALYSIS_SIZE = 1000;
+  const dataLength = audioData.length;
+
+  // Calculate min, max, and average iteratively
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let nanCount = 0;
+  let silenceCount = 0;
+
+  // Analyze only first and last portions to avoid memory issues
+  const samplesToAnalyze = Math.min(dataLength, MAX_ANALYSIS_SIZE);
+  const firstHalf = Math.floor(samplesToAnalyze / 2);
+
+  // Analyze beginning of array
+  for (let i = 0; i < firstHalf; i++) {
+    if (i >= 0 && i < dataLength) {
+      const val = audioData[i];
+      if (val !== undefined) {
+        if (isNaN(val)) {
+          nanCount++;
+        } else {
+          min = Math.min(min, val);
+          max = Math.max(max, val);
+          sum += val;
+          if (Math.abs(val) < 0.01) silenceCount++;
+        }
+      }
+    }
+  }
+
+  // Analyze end of array
+  for (let i = Math.max(0, dataLength - firstHalf); i < dataLength; i++) {
+    if (i >= 0 && i < dataLength) {
+      const val = audioData[i];
+      if (val !== undefined) {
+        if (isNaN(val)) {
+          nanCount++;
+        } else {
+          min = Math.min(min, val);
+          max = Math.max(max, val);
+          sum += val;
+          if (Math.abs(val) < 0.01) silenceCount++;
+        }
+      }
+    }
+  }
+
+  // Guard against division by zero
+  const avg = samplesToAnalyze > 0 ? sum / samplesToAnalyze : 0;
+
+  // Get samples without using slice or map
+  const firstSamples: string[] = [];
+  const lastSamples: string[] = [];
+
+  for (let i = 0; i < 5 && i < dataLength; i++) {
+    const value = audioData[i];
+    if (value !== undefined) {
+      firstSamples.push(Number(value).toFixed(4));
+    }
+  }
+
+  for (let i = Math.max(0, dataLength - 5); i < dataLength; i++) {
+    const value = audioData[i];
+    if (value !== undefined) {
+      lastSamples.push(Number(value).toFixed(4));
+    }
+  }
+
+  console.log(`[Audio Analysis] ${label} (${dataLength} samples):
+    - Range: ${min.toFixed(4)} to ${max.toFixed(4)}
+    - Average: ${avg.toFixed(4)}
+    - NaN values: ${nanCount}
+    - Mostly silent: ${(silenceCount / samplesToAnalyze) > 0.9}
+    - First ${firstSamples.length} samples: [${firstSamples.join(', ')}]
+    - Last ${lastSamples.length} samples: [${lastSamples.join(', ')}]
+  `);
+}

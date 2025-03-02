@@ -3,6 +3,15 @@
  */
 
 /**
+ * Escapes regular expression special characters from a string
+ * @param {string} string - The string to escape
+ * @returns {string} Escaped string
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+}
+
+/**
  * Split text into proper sentences for better TTS quality
  * @param {string} text - Input text to split
  * @returns {string[]} Array of sentences
@@ -12,7 +21,7 @@ export function splitTextIntoSentences(text: string): string[] {
     return [];
   }
 
-  // Regex for sentence boundary detection
+  // Regex for sentence boundary detection - match KokoroJS patterns exactly
   const sentenceRegex = /[.!?।॥…]+["']?\s+|[\n\r]+/g;
 
   // Split text on sentence boundaries
@@ -116,4 +125,33 @@ export function ensureSafeTokenLength(chunk: string, maxTokens: number = 500): s
   }
 
   return [chunk];
+}
+
+/**
+ * Helper function to split a string on a regex, but keep the delimiters.
+ * This matches KokoroJS implementation exactly
+ * @param {string} text - The text to split
+ * @param {RegExp} regex - The regex to split on
+ * @returns {{match: boolean; text: string}[]} The split string
+ */
+export function split(text: string, regex: RegExp): Array<{match: boolean; text: string}> {
+  const result: Array<{match: boolean; text: string}> = [];
+  let prev = 0;
+
+  for (const match of text.matchAll(regex)) {
+    const fullMatch = match[0];
+    if (prev < match.index!) {
+      result.push({ match: false, text: text.slice(prev, match.index) });
+    }
+    if (fullMatch.length > 0) {
+      result.push({ match: true, text: fullMatch });
+    }
+    prev = match.index! + fullMatch.length;
+  }
+
+  if (prev < text.length) {
+    result.push({ match: false, text: text.slice(prev) });
+  }
+
+  return result;
 }

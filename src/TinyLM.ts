@@ -20,7 +20,8 @@ import {
   EmbeddingCreateOptions,
   EmbeddingResult,
   SpeechCreateOptions,
-  SpeechResult
+  SpeechResult,
+  SpeechStreamResult
 } from './types';
 
 /**
@@ -51,10 +52,10 @@ export class TinyLM {
   };
 
   readonly audio: {
-    speech: {
-      create: (options: SpeechCreateOptions) => Promise<SpeechResult>;
-    };
+  speech: {
+    create: (options: SpeechCreateOptions) => Promise<SpeechResult | SpeechStreamResult>;
   };
+}
 
   readonly models: {
     load: (options: ModelLoadOptions) => Promise<any>;
