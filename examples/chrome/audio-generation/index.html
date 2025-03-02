@@ -1474,14 +1474,15 @@
 
           // Array to store all audio data
           const audioChunks = [];
+          const contentType = result.chunks[0].content_type;
 
           // Display and handle individual chunks
           result.chunks.forEach((chunk, index) => {
-            // Store the chunk's audio data
-            audioChunks.push(new Uint8Array(chunk.audio));
+            // Store the chunk's raw audio data directly
+            audioChunks.push(chunk.audio);
 
             // Create blob for this chunk's display
-            const chunkBlob = new Blob([chunk.audio], { type: chunk.content_type });
+            const chunkBlob = new Blob([chunk.audio], { type: contentType });
             const chunkUrl = URL.createObjectURL(chunkBlob);
 
             const chunkElement = document.createElement('div');
@@ -1503,23 +1504,17 @@
               </div>
             `;
             streamChunks.appendChild(chunkElement);
+
+            // Log chunk size for debugging
+            addLogEntry(`Chunk ${index + 1} size: ${formatBytes(chunk.audio.byteLength)}`);
           });
 
-          // Calculate total size needed for all chunks
-          const totalLength = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+          // Calculate total size and log it
+          const totalLength = audioChunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+          addLogEntry(`Total combined size will be: ${formatBytes(totalLength)}`);
 
-          // Create a combined array and merge all chunks
-          const combinedArray = new Uint8Array(totalLength);
-          let offset = 0;
-
-          // Copy each chunk into the combined array
-          audioChunks.forEach(chunk => {
-            combinedArray.set(chunk, offset);
-            offset += chunk.length;
-          });
-
-          // Create the final blob with the combined data
-          const combinedBlob = new Blob([combinedArray], { type: result.chunks[0].content_type });
+          // Create the final blob with all chunks directly
+          const combinedBlob = new Blob(audioChunks, { type: contentType });
           const audioUrl = URL.createObjectURL(combinedBlob);
 
           // Update audio player with combined audio
@@ -1535,7 +1530,7 @@
           playgroundTtsTime.textContent = `Generated in ${Math.round(timeTaken)}ms`;
 
           // Add to history with chunk information
-          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), combinedBlob, result.chunks[0].content_type, timeTaken, result.chunks.length);
+          addToHistory(text, voiceId, parseFloat(playgroundSpeed.value), combinedBlob, contentType, timeTaken, result.chunks.length);
 
         } else if (!useStreaming) {
           // Handle non-streaming result
