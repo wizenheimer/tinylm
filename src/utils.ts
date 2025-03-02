@@ -94,3 +94,32 @@ export function tryGarbageCollection(): void {
     console.debug('Garbage collection not available in this environment');
   }
 }
+
+
+/**
+ * Log audio generation debug info
+ * @param {any} audioData - Audio data for debugging
+ * @param {string} stage - Processing stage
+ */
+export function logAudioDebug(audioData: any, stage: string = 'unknown') {
+  if (!audioData) {
+    console.warn(`[Audio Debug] ${stage}: No audio data`);
+    return;
+  }
+
+  const length = audioData.length || (audioData.data ? audioData.data.length : 0);
+  const sampleValues = length > 0 ? Array.from(audioData.data || audioData).slice(0, 5) : [];
+  const hasNaN = Array.from(audioData.data || audioData).some((v: any) => isNaN(v));
+
+  const stats = {
+    stage,
+    length,
+    hasValues: length > 0,
+    hasNonZero: Array.from(audioData.data || audioData).some((v: any) => v !== 0),
+    sampleValues,
+    hasNaN,
+    type: audioData.constructor.name
+  };
+
+  console.log("[Audio Debug]", stats);
+}

@@ -91,18 +91,18 @@ export class WebGPUChecker {
       };
     }
 
-    // Without WebGPU, use CPU
+    // Without WebGPU, use WASM with q8 (like KokoroJS)
     if (!this.isWebGPUSupported) {
       return {
-        device: "cpu",
-        dtype: "fp32"
+        device: "wasm", // Changed from "cpu" to "wasm"
+        dtype: "q8"     // Changed to "q8" for better performance in WASM
       };
     }
 
-    // With WebGPU available, use it with appropriate quantization
+    // With WebGPU available, use fp32 like KokoroJS
     return {
       device: "webgpu",
-      dtype: this.fp16Supported ? "q4f16" : "q4"
+      dtype: "fp32"  // Changed from conditional q4f16/q4 to fp32
     };
   }
 }

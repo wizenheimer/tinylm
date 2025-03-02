@@ -60,101 +60,102 @@ export class AudioModule extends BaseModule {
   }
 
   /**
-   * Load a TTS model
-   * @param {Object} options - Load options
-   * @returns {Promise<boolean>} Success status
-   */
-  async loadModel(options: { model: string }): Promise<boolean> {
-    const { model } = options;
+ * Load a TTS model
+ * @param {Object} options - Load options
+ * @returns {Promise<boolean>} Success status
+ */
+async loadModel(options: { model: string }): Promise<boolean> {
+  const { model } = options;
 
-    if (!model) {
-      throw new Error('Model identifier is required');
-    }
+  if (!model) {
+    throw new Error('Model identifier is required');
+  }
 
-    // Return if already loading
-    if (this.modelIsLoading) {
-      throw new Error('Another model is currently loading');
-    }
+  // Return if already loading
+  if (this.modelIsLoading) {
+    throw new Error('Another model is currently loading');
+  }
 
-    // Set as active and return if already loaded
-    if (this.modelRegistry.get(model) === true) {
-      this.activeModel = model;
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'tts_model',
-        progress: 1,
-        percentComplete: 100,
-        message: `Model ${model} is already loaded`
-      });
-
-      return true;
-    }
-
-    // Set loading state
-    this.modelIsLoading = true;
+  // Set as active and return if already loaded
+  if (this.modelRegistry.get(model) === true) {
     this.activeModel = model;
 
-    try {
-      // Check hardware capabilities
-      const capabilities = await this.webgpuChecker.check();
+    this.progressTracker.update({
+      status: 'ready',
+      type: 'tts_model',
+      progress: 1,
+      percentComplete: 100,
+      message: `Model ${model} is already loaded`
+    });
 
-      // Get optimal config
-      const config = await this.getOptimalDeviceConfig();
-
-      // For TTS models, always use CPU in Node.js environment or if WebGPU is not available
-      const device = this.isNodeEnvironment() || !capabilities.isWebGPUSupported ? "cpu" : config.device;
-
-      // Initial progress message
-      this.progressTracker.update({
-        status: 'loading',
-        type: 'tts_model',
-        progress: 0,
-        percentComplete: 0,
-        message: `Loading TTS model ${model}`
-      });
-
-      // Load the model directly by name
-      await this.ttsEngine.loadModel(model, {
-        onProgress: (progress: any) => {
-          this.progressTracker.update({
-            status: 'loading',
-            type: 'tts_model',
-            message: `Loading TTS model: ${model}`,
-            progress: progress.progress,
-            percentComplete: progress.progress ? Math.round(progress.progress * 100) : undefined,
-            ...progress
-          });
-        },
-        device: device,
-        dtype: config.dtype
-      });
-
-      // Register the model as loaded
-      this.modelRegistry.set(model, true);
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'tts_model',
-        progress: 1,
-        percentComplete: 100,
-        message: `TTS model ${model} loaded successfully`
-      });
-
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'tts_model',
-        message: `Error loading TTS model ${model}: ${errorMessage}`
-      });
-
-      throw new Error(`Failed to load TTS model ${model}: ${errorMessage}`);
-    } finally {
-      this.modelIsLoading = false;
-    }
+    return true;
   }
+
+  // Set loading state
+  this.modelIsLoading = true;
+  this.activeModel = model;
+
+  try {
+    // Check hardware capabilities
+    const capabilities = await this.webgpuChecker.check();
+
+    // Get optimal config
+    const config = await this.getOptimalDeviceConfig();
+
+    // Determine device explicitly based on environment and capabilities
+    const device = this.isNodeEnvironment() ? "cpu" :
+                  !capabilities.isWebGPUSupported ? "wasm" : "webgpu";
+
+    // Initial progress message
+    this.progressTracker.update({
+      status: 'loading',
+      type: 'tts_model',
+      progress: 0,
+      percentComplete: 0,
+      message: `Loading TTS model ${model} (device="${device}", dtype="${config.dtype}")`
+    });
+
+    // Load the model with explicit device and dtype
+    await this.ttsEngine.loadModel(model, {
+      onProgress: (progress: any) => {
+        this.progressTracker.update({
+          status: 'loading',
+          type: 'tts_model',
+          message: `Loading TTS model: ${model}`,
+          progress: progress.progress,
+          percentComplete: progress.progress ? Math.round(progress.progress * 100) : undefined,
+          ...progress
+        });
+      },
+      device: device,
+      dtype: config.dtype
+    });
+
+    // Register the model as loaded
+    this.modelRegistry.set(model, true);
+
+    this.progressTracker.update({
+      status: 'ready',
+      type: 'tts_model',
+      progress: 1,
+      percentComplete: 100,
+      message: `TTS model ${model} loaded successfully`
+    });
+
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.progressTracker.update({
+      status: 'error',
+      type: 'tts_model',
+      message: `Error loading TTS model ${model}: ${errorMessage}`
+    });
+
+    throw new Error(`Failed to load TTS model ${model}: ${errorMessage}`);
+  } finally {
+    this.modelIsLoading = false;
+  }
+}
 
   /**
    * Create speech from text
