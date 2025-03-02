@@ -112,7 +112,7 @@ export class TTSEngine {
 
       if (maxValue > 0) {
         for (let i = 0; i < audioData.length; i++) {
-          normalizedData[i] = audioData[i] / maxValue;
+          normalizedData[i] = audioData[i]! / maxValue;
         }
       }
 
@@ -120,7 +120,7 @@ export class TTSEngine {
       const int16Array = new Int16Array(normalizedData.length);
       const int16Factor = 0x7FFF;
       for (let i = 0; i < normalizedData.length; i++) {
-        const s = normalizedData[i];
+        const s = normalizedData[i]!;
         int16Array[i] = s < 0 ? Math.max(-0x8000, s * 0x8000) : Math.min(0x7FFF, s * int16Factor);
       }
 

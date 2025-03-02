@@ -1,4 +1,5 @@
 // Implementation file for phonemization
+// Some of this code is from https://github.com/hexgrad/kokoro/
 import { phonemize as espeakng } from "phonemizer";
 
 /**
@@ -38,6 +39,7 @@ function split_num(match: string) {
     return match;
   } else if (match.includes(":")) {
     let [h, m] = match.split(":").map(Number);
+    if (h === undefined || m === undefined) return match;
     if (m === 0) {
       return `${h} o'clock`;
     } else if (m < 10) {
@@ -75,7 +77,10 @@ function flip_money(match: string) {
     let suffix = match.slice(1) === "1" ? "" : "s";
     return `${match.slice(1)} ${bill}${suffix}`;
   }
-  const [b, c] = match.slice(1).split(".");
+  const parts = match.slice(1).split(".");
+  if (parts.length < 2) return match; // Handle cases where split doesn't result in 2 parts
+  const [b, c] = parts;
+  if (!c) return match; // Additional safety check
   const d = parseInt(c.padEnd(2, "0"), 10);
   let coins = match[0] === "$" ? (d === 1 ? "cent" : "cents") : d === 1 ? "penny" : "pence";
   return `${b} ${bill}${b === "1" ? "" : "s"} and ${d} ${coins}`;
@@ -87,7 +92,10 @@ function flip_money(match: string) {
  * @returns {string} The formatted number
  */
 function point_num(match: string) {
-  let [a, b] = match.split(".");
+  const parts = match.split(".");
+  if (parts.length < 2) return match; // Handle cases where split doesn't result in 2 parts
+  const [a, b] = parts;
+  if (!b) return match; // Additional safety check
   return `${a} point ${b.split("").join(" ")}`;
 }
 
@@ -101,8 +109,8 @@ function normalize_text(text: string) {
     text
       // 1. Handle quotes and brackets
       .replace(/['']/g, "'")
-      .replace(/«/g, """)
-      .replace(/»/g, """)
+      .replace(/«/g, "\"")
+      .replace(/»/g, "\"")
       .replace(/[""]/g, '"')
       .replace(/\(/g, "«")
       .replace(/\)/g, "»")
@@ -468,16 +476,20 @@ function processHinglishText(text: string): string {
       // Check two-character patterns first
       if (i < word.length - 1) {
         const twoChars = word.substring(i, i + 2);
-        if (HINGLISH_PHONEME_MAP[twoChars]) {
-          result += HINGLISH_PHONEME_MAP[twoChars];
+        if (twoChars in HINGLISH_PHONEME_MAP) {
+          result += HINGLISH_PHONEME_MAP[twoChars as keyof typeof HINGLISH_PHONEME_MAP];
           i += 2;
           continue;
         }
       }
 
       // Handle single characters
-      const char = word[i];
-      result += HINGLISH_PHONEME_MAP[char] || char;
+      const char = word.charAt(i);
+      if (char in HINGLISH_PHONEME_MAP) {
+        result += HINGLISH_PHONEME_MAP[char as keyof typeof HINGLISH_PHONEME_MAP];
+      } else {
+        result += char;
+      }
       i++;
     }
 

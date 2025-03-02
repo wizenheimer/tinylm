@@ -5,7 +5,7 @@
 
 import { BaseModule } from './BaseModule';
 import { TTSEngine } from './TTSEngine';
-import { SpeechCreateOptions, SpeechResult, ModelConfig } from './types';
+import { SpeechCreateOptions, SpeechResult } from './types';
 
 /**
  * Audio module for TinyLM
@@ -111,18 +111,8 @@ export class AudioModule extends BaseModule {
         message: `Loading TTS model ${model}`
       });
 
-      // Create model config for TTSEngine
-      const modelConfig: ModelConfig = {
-        modelName: model,
-        modelType: 'text-to-speech',
-        repo: model,
-        pipeline: 'text-to-speech',
-        defaultQuantization: config.dtype || 'fp32',
-        engine: 'transformers'
-      };
-
-      // Load the model
-      await this.ttsEngine.loadModel(modelConfig, {
+      // Load the model directly by name
+      await this.ttsEngine.loadModel(model, {
         onProgress: (progress: any) => {
           this.progressTracker.update({
             status: 'loading',
