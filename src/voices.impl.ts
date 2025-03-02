@@ -170,6 +170,97 @@ export const VOICES = Object.freeze({
 
 const VOICE_DATA_URL = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices";
 
+// Helper to detect environment
+function isNodeEnvironment(): boolean {
+  return typeof process !== 'undefined' &&
+    process.versions != null &&
+    process.versions.node != null;
+}
+
+// Polyfill for Headers in Node.js
+class NodeHeaders {
+  private headers: Record<string, string> = {};
+
+  constructor(init?: Record<string, string>) {
+    if (init) {
+      Object.entries(init).forEach(([key, value]) => {
+        this.headers[key.toLowerCase()] = value;
+      });
+    }
+  }
+
+  get(name: string): string | null {
+    return this.headers[name.toLowerCase()] || null;
+  }
+
+  has(name: string): boolean {
+    return name.toLowerCase() in this.headers;
+  }
+
+  // More methods can be added as needed
+}
+
+// Use native Headers or polyfill
+const HeadersPolyfill = typeof Headers !== 'undefined' ? Headers : NodeHeaders;
+
+// Polyfill for fetch in Node.js environments
+async function safeFetch(url: string): Promise<{ arrayBuffer: () => Promise<ArrayBuffer>, headers: any }> {
+  if (isNodeEnvironment()) {
+    try {
+      // Try native fetch first (Node.js v18+)
+      if (typeof fetch === 'function') {
+        return await fetch(url);
+      }
+
+      // Fallback to node-fetch or undici for older Node.js versions
+      try {
+        // Try to use undici (built into newer Node.js versions)
+        const { fetch: undiciFetch } = await import('undici');
+        return await undiciFetch(url);
+      } catch (err) {
+        // Fallback to using https module directly
+        const https = await import('https');
+        const { URL } = await import('url');
+
+        const parsedUrl = new URL(url);
+
+        return new Promise((resolve, reject) => {
+          let data: Buffer[] = [];
+
+          https.get({
+            hostname: parsedUrl.hostname,
+            path: parsedUrl.pathname + parsedUrl.search,
+            headers: { 'User-Agent': 'TinyLM/1.0' }
+          }, (res) => {
+            if (res.statusCode !== 200) {
+              reject(new Error(`Status Code: ${res.statusCode}`));
+              return;
+            }
+
+            res.on('data', (chunk) => data.push(Buffer.from(chunk)));
+            res.on('end', () => {
+              const buffer = Buffer.concat(data);
+              resolve({
+                arrayBuffer: async () => buffer.buffer.slice(
+                  buffer.byteOffset,
+                  buffer.byteOffset + buffer.byteLength
+                ),
+                headers: new HeadersPolyfill(res.headers as Record<string, string>)
+              });
+            });
+          }).on('error', reject);
+        });
+      }
+    } catch (err) {
+      console.error('Error using Node.js fetch methods:', err);
+      throw err;
+    }
+  } else {
+    // Browser environment - use native fetch
+    return await fetch(url);
+  }
+}
+
 /**
  * Fetch voice data from the voice file
  * @param {keyof typeof VOICES} id - Voice identifier
@@ -178,23 +269,81 @@ const VOICE_DATA_URL = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ON
 async function getVoiceFile(id: string): Promise<ArrayBuffer> {
   const url = `${VOICE_DATA_URL}/${id}.bin`;
 
-  let cache;
-  try {
-    cache = await caches.open("kokoro-voices");
-    const cachedResponse = await cache.match(url);
-    if (cachedResponse) {
-      return await cachedResponse.arrayBuffer();
+  // Detect if we're in Node.js environment
+  const isNode = isNodeEnvironment();
+
+  // Try to get from cache first
+  if (isNode) {
+    // Node.js environment - use fs for caching
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const os = await import('os');
+
+      // Create a cache directory in the system temp directory
+      const cacheDir = path.join(os.tmpdir(), 'tinylm-voice-cache');
+
+      try {
+        await fs.mkdir(cacheDir, { recursive: true });
+      } catch (err) {
+        // Directory might already exist, ignore error
+      }
+
+      const cacheFilePath = path.join(cacheDir, `${id}.bin`);
+
+      // Check if the file exists in cache
+      try {
+        const stats = await fs.stat(cacheFilePath);
+        if (stats.isFile() && stats.size > 0) {
+          // File exists in cache, read it
+          const buffer = await fs.readFile(cacheFilePath);
+          return buffer.buffer;
+        }
+      } catch (err) {
+        // File doesn't exist, will fetch it
+      }
+    } catch (err) {
+      // If there's any error with the file system, continue to network fetch
+      console.warn("Unable to use file system cache:", err);
     }
-  } catch (e) {
-    console.warn("Unable to open cache", e);
+  } else {
+    // Browser environment - use Cache API if available
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open("kokoro-voices");
+        const cachedResponse = await cache.match(url);
+        if (cachedResponse) {
+          return await cachedResponse.arrayBuffer();
+        }
+      } catch (e) {
+        console.warn("Unable to use browser cache:", e);
+      }
+    }
   }
 
-  // No cache, or cache failed to open. Fetch the file.
-  const response = await fetch(url);
+  // No cache hit, fetch the file
+  const response = await safeFetch(url);
   const buffer = await response.arrayBuffer();
 
-  if (cache) {
+  // Cache the file for future use
+  if (isNode) {
     try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const os = await import('os');
+
+      const cacheDir = path.join(os.tmpdir(), 'tinylm-voice-cache');
+      const cacheFilePath = path.join(cacheDir, `${id}.bin`);
+
+      // Write the file to cache
+      await fs.writeFile(cacheFilePath, new Uint8Array(buffer));
+    } catch (err) {
+      console.warn("Unable to cache file in Node.js:", err);
+    }
+  } else if (typeof caches !== 'undefined' && typeof Response !== 'undefined') {
+    // Browser caching only if Cache API and Response are available
+    try {
+      const cache = await caches.open("kokoro-voices");
       // NOTE: We use `new Response(buffer, ...)` instead of `response.clone()` to handle LFS files
       await cache.put(
         url,
@@ -203,7 +352,7 @@ async function getVoiceFile(id: string): Promise<ArrayBuffer> {
         }),
       );
     } catch (e) {
-      console.warn("Unable to cache file", e);
+      console.warn("Unable to cache file in browser:", e);
     }
   }
 
