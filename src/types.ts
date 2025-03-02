@@ -254,11 +254,12 @@ export interface ModelLoadOptions {
 }
 
 /**
- * Interface for model initialization options
+ * Update InitOptions to include ttsModels
  */
 export interface InitOptions {
   models?: string[];
   embeddingModels?: string[];
+  ttsModels?: string[];
   lazyLoad?: boolean;
   [key: string]: any;
 }
@@ -288,5 +289,33 @@ export interface EmbeddingResult {
   usage: {
     prompt_tokens: number;
     total_tokens: number;
+  };
+}
+
+
+/**
+ * Interface for speech creation options
+ */
+export interface SpeechCreateOptions {
+  model?: string;
+  input: string;
+  voice?: string;
+  response_format?: 'mp3' | 'wav';
+  speed?: number;
+  [key: string]: any;
+}
+
+/**
+ * Interface for speech result
+ */
+export interface SpeechResult {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  audio: ArrayBuffer;
+  content_type: string;
+  _tinylm?: {
+    time_ms: number;
   };
 }

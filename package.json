@@ -33,6 +33,7 @@
     "typescript": "^5.7.3"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.3.3"
+    "@huggingface/transformers": "^3.3.3",
+    "phonemizer": "^1.2.1"
   }
 }

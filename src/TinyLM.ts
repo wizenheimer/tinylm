@@ -7,6 +7,7 @@ import { ProgressTracker } from './ProgressTracker';
 import { WebGPUChecker } from './WebGPUChecker';
 import { GenerationModule } from './GenerationModule';
 import { EmbeddingsModule } from './EmbeddingsModule';
+import { AudioModule } from './AudioModule';
 
 import {
   TinyLMOptions,
@@ -17,7 +18,9 @@ import {
   CompletionChunk,
   ModelLoadOptions,
   EmbeddingCreateOptions,
-  EmbeddingResult
+  EmbeddingResult,
+  SpeechCreateOptions,
+  SpeechResult
 } from './types';
 
 /**
@@ -33,6 +36,7 @@ export class TinyLM {
   // Modules
   private generationModule: GenerationModule;
   private embeddingsModule: EmbeddingsModule;
+  private audioModule: AudioModule;
 
   // API structure
   readonly chat: {
@@ -46,6 +50,12 @@ export class TinyLM {
     create: (options: EmbeddingCreateOptions) => Promise<EmbeddingResult>;
   };
 
+  readonly audio: {
+    speech: {
+      create: (options: SpeechCreateOptions) => Promise<SpeechResult>;
+    };
+  };
+
   readonly models: {
     load: (options: ModelLoadOptions) => Promise<any>;
     offload: (options: { model: string }) => Promise<boolean>;
@@ -53,6 +63,9 @@ export class TinyLM {
     reset: () => void;
     check: () => Promise<CapabilityInfo>;
     list: () => string[];
+    loadTTS: (options: { model: string }) => Promise<boolean>;
+    offloadTTS: (options: { model: string }) => Promise<boolean>;
+    listTTS: () => string[];
   };
 
   /**
@@ -79,6 +92,7 @@ export class TinyLM {
     // Initialize modules
     this.generationModule = new GenerationModule(this);
     this.embeddingsModule = new EmbeddingsModule(this);
+    this.audioModule = new AudioModule(this);
 
     // Create API structure similar to OpenAI
     this.chat = {
@@ -92,6 +106,12 @@ export class TinyLM {
       create: this.embeddingsModule.create.bind(this.embeddingsModule)
     };
 
+    this.audio = {
+      speech: {
+        create: this.audioModule.createSpeech.bind(this.audioModule)
+      }
+    };
+
     // Model management API
     this.models = {
       load: this.generationModule.loadModel.bind(this.generationModule),
@@ -99,7 +119,10 @@ export class TinyLM {
       interrupt: this.generationModule.interrupt.bind(this.generationModule),
       reset: this.generationModule.reset.bind(this.generationModule),
       check: this.checkCapabilities.bind(this),
-      list: () => Array.from(this.generationModule.getModelRegistry().keys())
+      list: () => Array.from(this.generationModule.getModelRegistry().keys()),
+      loadTTS: this.audioModule.loadModel.bind(this.audioModule),
+      offloadTTS: this.audioModule.offloadModel.bind(this.audioModule),
+      listTTS: this.audioModule.getLoadedModels.bind(this.audioModule)
     };
   }
 
@@ -171,6 +194,11 @@ export class TinyLM {
         defaultModel: options.embeddingModels && options.embeddingModels.length > 0
           ? options.embeddingModels[0]
           : undefined
+      });
+
+      await this.audioModule.init({
+        ttsModels: options.ttsModels || [],
+        lazyLoad: options.lazyLoad
       });
 
       this.initialized = true;

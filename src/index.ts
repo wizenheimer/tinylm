@@ -8,6 +8,7 @@ export { TinyLM } from './TinyLM';
 // Export modules
 export { GenerationModule } from './GenerationModule';
 export { EmbeddingsModule } from './EmbeddingsModule';
+export { AudioModule } from './AudioModule';
 
 // Export utilities
 export { tryGarbageCollection, detectEnvironment } from './utils';
@@ -17,6 +18,7 @@ export { FileProgressTracker } from './FileProgressTracker';
 export { WebGPUChecker } from './WebGPUChecker';
 export { GenerationController, InterruptableStoppingCriteria } from './GenerationController';
 export { createStreamer } from './TextStreamHandler';
+export { TTSEngine } from './TTSEngine';
 
 // Export type definitions
 export type {
@@ -39,6 +41,10 @@ export type {
   // Embedding types
   EmbeddingCreateOptions,
   EmbeddingResult,
+
+  // Audio types
+  SpeechCreateOptions,
+  SpeechResult,
 
   // Model types
   ModelLoadOptions,
