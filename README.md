@@ -3,9 +3,10 @@
   <p> Browser based ML Inference </p>
   <p> Run DeepSeek, Llama3.2, Nomic Embed and more right inside your browser </p>
   <p>
-    <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples </strong> | </a>
-    <a href="https://github.com/wizenheimer/tinychat"><strong>TinyChat </strong> | </a>
-    <a href="https://github.com/wizenheimer/tinyembed"><strong>TinyEmbed </strong></a>
+    <a href="https://github.com/wizenheimer/tinylm/tree/main/examples"><strong>Examples </strong> </a> |
+    <a href="https://github.com/wizenheimer/tinychat"><strong> TinyChat </strong> </a> |
+    <a href="https://github.com/wizenheimer/tinyembed"><strong> TinyEmbed </strong> </a> |
+    <a href="https://github.com/wizenheimer/tinysonnet"><strong> TinySonnet </strong> </a>
   </p>
 </div>
 
@@ -129,6 +130,26 @@ for await (const chunk of stream) {
   const content = chunk.choices[0]?.delta?.content || "";
   process.stdout.write(content); // Display content as it arrives
 }
+```
+
+### Audio Generation
+
+![TinySonnet](assets/tinysonnet.png)
+
+Source: [Fork Me](https://github.com/wizenheimer/tinysonnet)
+
+### Text to Speech Example
+
+```javascript
+import { TinyLM } from "tinylm";
+
+const tiny = new TinyLM();
+
+const audio = await tiny.audio.speech.create({
+  model: "onnx-community/Kokoro-82M-v1.0-ONNX",
+  voice: "af_bella",
+  input: "Today is a wonderful day to build something people love!",
+});
 ```
 
 ## API Reference
@@ -761,26 +782,6 @@ const response = await tiny.chat.completions.create({
 
 ## Roadmap
 
-### Text to Speech
-
-```javascript
-import fs from "fs";
-import path from "path";
-import { TinyLM } from "tinylm";
-
-const tiny = new TinyLM();
-const speechFile = path.resolve("./speech.mp3");
-
-const mp3 = await tiny.audio.speech.create({
-  model: "tts-model",
-  voice: "alloy",
-  input: "Today is a wonderful day to build something people love!",
-});
-
-const buffer = Buffer.from(await mp3.arrayBuffer());
-await fs.promises.writeFile(speechFile, buffer);
-```
-
 ### Speech to Text
 
 ```javascript
@@ -812,6 +813,10 @@ const response = await tiny.images.generate({
 
 console.log(response.data[0].url);
 ```
+
+### Refine SDK Design
+
+Get rid of temp fixes, and streamline the model management APIs
 
 ## License
 
