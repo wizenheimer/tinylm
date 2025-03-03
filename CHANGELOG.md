@@ -1,5 +1,11 @@
 # tinylm
 
+## 0.0.6
+
+### Patch Changes
+
+- 47d4624: add kokoro tts
+
 ## 0.0.5
 
 ### Patch Changes
