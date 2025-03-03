@@ -1,6 +1,6 @@
 {
   "name": "tinylm",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Browser based ML Inference | OpenAI compliant | Run models like DeepSeek, Llama 3.2, NomicEmbed, KokoroTTS and more",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
