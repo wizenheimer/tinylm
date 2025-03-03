@@ -102,7 +102,7 @@ export class WebGPUChecker {
     // With WebGPU available, use fp32 like KokoroJS
     return {
       device: "webgpu",
-      dtype: "fp32"  // Changed from conditional q4f16/q4 to fp32
+      dtype: "q4f16"  // Changed from conditional q4f16/q4 to fp32
     };
   }
 }

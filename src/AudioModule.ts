@@ -111,7 +111,7 @@ export class AudioModule extends BaseModule {
         type: 'tts_model',
         progress: 0,
         percentComplete: 0,
-        message: `Loading TTS model ${model} (device="${device}", dtype="${config.dtype}")`
+        message: `Loading TTS model ${model} (device="${device}", dtype="${"fp32"}")`
       });
 
       // Load the model directly by name
@@ -127,7 +127,7 @@ export class AudioModule extends BaseModule {
           });
         },
         device: device,
-        dtype: config.dtype
+        dtype: "fp32", // TEMPFIX: config.dtype
       });
 
       // Register the model as loaded
