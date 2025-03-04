@@ -10,7 +10,12 @@
  * - Document retrieval and ranking
  */
 
-import { TinyLM, ProgressUpdate, FileInfo, OverallProgress } from '../../../src/index';
+import { TinyLM } from '../../../src/TinyLM';
+import { WebGPUChecker } from '../../../src/WebGPUChecker';
+import { ProgressTracker } from '../../../src/ProgressTracker';
+import { ModelType } from '../../../src/types';
+import type { ProgressUpdate } from '../../../src/types';
+import { FileInfo, OverallProgress } from '../../../src/index';
 
 // Format bytes to human-readable size
 function formatBytes(bytes: number | undefined): string {
@@ -53,9 +58,9 @@ function formatProgress(progress: ProgressUpdate): string {
   let color = '';
   let resetColor = '';
   if (typeof process !== 'undefined' && process.stdout &&
-      // TypeScript-safe check for hasColors method
-      typeof (process.stdout as any).hasColors === 'function' &&
-      (process.stdout as any).hasColors()) {
+    // TypeScript-safe check for hasColors method
+    typeof (process.stdout as any).hasColors === 'function' &&
+    (process.stdout as any).hasColors()) {
     // Terminal colors
     switch (type) {
       case 'system': color = '\x1b[36m'; break; // Cyan
@@ -138,31 +143,37 @@ function cosineSimilarity(a: number[], b: number[]): number {
 async function runNomicEmbeddingsExample(): Promise<void> {
   console.log('=== TinyLM with Nomic AI Embeddings Example ===');
 
+  // Check hardware capabilities
+  console.log('\nChecking hardware capabilities...');
+  const webgpuChecker = new WebGPUChecker();
+  const capabilities = await webgpuChecker.check();
+  console.log(`WebGPU available: ${capabilities.isWebGPUSupported}`);
+  console.log(`FP16 supported: ${capabilities.fp16Supported}`);
+  console.log(`Backend: ${capabilities.adapterInfo?.name || 'unknown'}\n`);
+
   // Create a new TinyLM instance with progress tracking
   const tiny = new TinyLM({
-    progressCallback: (progress: ProgressUpdate) => {
+    progressTracker: new ProgressTracker((progress) => {
       try {
         console.log(formatProgress(progress));
       } catch (error) {
         // Fallback to simple logging
         console.log(`[${progress.status}] ${progress.message || ''}`);
       }
-    },
-    progressThrottleTime: 100
+    }),
+    webgpuChecker
   });
 
   try {
-    // Check hardware capabilities
-    console.log("\nChecking hardware capabilities...");
-    const capabilities = await tiny.models.check();
-    console.log("WebGPU available:", capabilities.isWebGPUSupported);
-    console.log("FP16 supported:", capabilities.fp16Supported);
-
     // Initialize TinyLM
-    console.log("\nInitializing TinyLM...");
-    await tiny.init({
-      embeddingModels: ['nomic-ai/nomic-embed-text-v1.5'], // Specify Nomic's model
-      lazyLoad: true
+    console.log('\nInitializing TinyLM...');
+    await tiny.init();
+
+    // Load the Nomic embedding model
+    console.log('\nLoading Nomic embedding model...');
+    await tiny.models.load({
+      model: 'nomic-ai/nomic-embed-text-v1.5',
+      type: ModelType.Embedding
     });
 
     const NOMIC_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -301,7 +312,7 @@ async function runNomicEmbeddingsExample(): Promise<void> {
       // Display predictions
       console.log("Classification results:");
       predictions.forEach((pred, i) => {
-        console.log(`  ${i+1}. ${pred.label}: ${(pred.score * 100).toFixed(2)}%`);
+        console.log(`  ${i + 1}. ${pred.label}: ${(pred.score * 100).toFixed(2)}%`);
       });
 
       console.log(`Classified as: ${predictions[0]?.label}`);
@@ -381,7 +392,7 @@ async function runNomicEmbeddingsExample(): Promise<void> {
 
       console.log("Top 3 relevant documents:");
       results.forEach((doc, i) => {
-        console.log(`  ${i+1}. [${doc.id}] (${(doc.similarity * 100).toFixed(2)}%): ${doc.content}`);
+        console.log(`  ${i + 1}. [${doc.id}] (${(doc.similarity * 100).toFixed(2)}%): ${doc.content}`);
       });
     }
 
@@ -390,6 +401,10 @@ async function runNomicEmbeddingsExample(): Promise<void> {
 
     // Load another embedding model for comparison
     const COMPARISON_MODEL = 'Xenova/all-MiniLM-L6-v2';
+    await tiny.models.load({
+      model: COMPARISON_MODEL,
+      type: ModelType.Embedding
+    });
 
     console.log(`\nComparing Nomic embeddings with ${COMPARISON_MODEL}...`);
 
@@ -430,12 +445,12 @@ async function runNomicEmbeddingsExample(): Promise<void> {
       console.log(`\n${modelName} similarities:`);
 
       // Header row
-      console.log(`${"".padEnd(10)}| ${comparisonTexts.map((_, i) => `Text ${i+1}`.padEnd(10)).join(" | ")}`);
+      console.log(`${"".padEnd(10)}| ${comparisonTexts.map((_, i) => `Text ${i + 1}`.padEnd(10)).join(" | ")}`);
       console.log("-".repeat(10 + (comparisonTexts.length * 13)));
 
       // Rows
       for (let i = 0; i < embeddings.length; i++) {
-        let row = `Text ${i+1}`.padEnd(10) + "| ";
+        let row = `Text ${i + 1}`.padEnd(10) + "| ";
 
         for (let j = 0; j < embeddings.length; j++) {
           const similarity = cosineSimilarity(embeddings[i]!, embeddings[j]!);
@@ -458,11 +473,19 @@ async function runNomicEmbeddingsExample(): Promise<void> {
       COMPARISON_MODEL
     );
 
-    // Offload models
-    console.log("\nOffloading embedding models...");
-    // Note: offloadModel is not implemented yet
-    // await tiny.embeddings.offloadModel(NOMIC_MODEL);
-    // await tiny.embeddings.offloadModel(COMPARISON_MODEL);
+    // Cleanup comparison model
+    await tiny.models.offload({
+      model: COMPARISON_MODEL,
+      type: ModelType.Embedding
+    });
+
+    // Cleanup
+    console.log('\nCleaning up...');
+    await tiny.models.offload({
+      model: NOMIC_MODEL,
+      type: ModelType.Embedding
+    });
+    console.log('Model unloaded successfully');
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

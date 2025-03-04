@@ -7,156 +7,134 @@
  * - Comparing streaming vs non-streaming approaches
  */
 
-import { TinyLM, ProgressUpdate, SpeechResult, SpeechStreamResult } from '../../../src/index';
+import { TinyLM } from '../../../src/TinyLM';
+import { WebGPUChecker } from '../../../src/WebGPUChecker';
+import { ProgressTracker } from '../../../src/ProgressTracker';
+import { ModelType, SpeechResult } from '../../../src/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { writeFile } from 'fs/promises';
 
 // Get current directory (ES module compatible)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Format progress for console output
-function formatProgress(progress: ProgressUpdate): string {
-  const { type, status, percentComplete, message } = progress;
-
-  // Progress bar for numeric progress
-  let progressBar = '';
-  if (typeof percentComplete === 'number' && percentComplete >= 0 && percentComplete <= 100) {
-    const barWidth = 20;
-    const filledWidth = Math.round((barWidth * percentComplete) / 100);
-    progressBar = '[' +
-      '#'.repeat(filledWidth) +
-      '-'.repeat(barWidth - filledWidth) +
-      `] ${percentComplete}%`;
+// Helper function to format progress updates
+function formatProgress(progress: any): string {
+  const parts = [`[${progress.status}]`];
+  if (progress.type) parts.push(`(${progress.type})`);
+  if (typeof progress.progress === 'number') {
+    const percent = Math.round(progress.progress * 100);
+    parts.push(`[${'#'.repeat(percent / 5)}${'-'.repeat(20 - percent / 5)}] ${percent}%`);
   }
-
-  // Format output lines
-  let output = `[${status}] ${type ? `(${type})` : ''}`;
-  if (progressBar) output += ` ${progressBar}`;
-  if (message) output += ` ${message}`;
-
-  return output;
+  if (progress.message) parts.push(progress.message);
+  return parts.join(' ');
 }
 
-// Create an output directory for audio files
-function ensureOutputDirExists(): string {
-  const outputDir = path.join(__dirname, 'audio-output');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-  return outputDir;
-}
-
-// Type guard to check if result is a streaming result
-function isStreamResult(result: SpeechResult | SpeechStreamResult): result is SpeechStreamResult {
-  return 'chunks' in result && Array.isArray((result as SpeechStreamResult).chunks);
-}
-
-// Main text-to-speech example
-async function runTextToSpeechExample(): Promise<void> {
-  console.log('=== TinyLM Text-to-Speech Example ===');
-
-  // Create an output directory
-  const outputDir = ensureOutputDirExists();
-
-  // Create a new TinyLM instance with custom progress tracking
-  const tiny = new TinyLM({
-    progressCallback: (progress: ProgressUpdate) => {
-      console.log(formatProgress(progress));
-    },
-    progressThrottleTime: 100
-  });
-
+// Main example function
+async function runTextToSpeechExample() {
   try {
-    // Check hardware capabilities first
-    console.log("\nChecking hardware capabilities...");
-    const capabilities = await tiny.models.check();
-    console.log("WebGPU available:", capabilities.isWebGPUSupported);
-    console.log("FP16 supported:", capabilities.fp16Supported);
-    if (capabilities.environment) {
-      console.log("Backend:", capabilities.environment.backend);
-    }
+    console.log('=== TinyLM Text-to-Speech Example ===\n');
 
-    // Initialize TinyLM
-    console.log("\nInitializing TinyLM...");
-    await tiny.init({
-      ttsModels: ['onnx-community/Kokoro-82M-v1.0-ONNX']
-    });
+    // Check hardware capabilities
+    console.log('Checking hardware capabilities...');
+    const webgpuChecker = new WebGPUChecker();
+    const capabilities = await webgpuChecker.check();
+    console.log(`WebGPU available: ${capabilities.isWebGPUSupported}`);
+    console.log(`FP16 supported: ${capabilities.fp16Supported}`);
+    console.log(`Backend: ${capabilities.adapterInfo?.name || 'unknown'}\n`);
 
-    // Example 1: Basic speech generation (non-streaming)
-    console.log("\n=== Example 1: Basic Speech Generation ===");
-    const shortText = "Welcome to TinyLM. This is a library for running language models and text-to-speech in browsers and Node.js.";
-    console.log(`\nGenerating speech for: "${shortText}"`);
-
-    const basicResult = await tiny.audio.speech.create({
-      model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-      input: shortText,
-      voice: 'af_bella',
-      response_format: 'wav'
-    });
-
-    // Output result is a regular SpeechResult
-    if (!isStreamResult(basicResult)) {
-      const basicPath = path.join(outputDir, 'basic_speech.wav');
-      fs.writeFileSync(basicPath, Buffer.from(basicResult.audio));
-      console.log(`Speech saved to: ${basicPath}`);
-      console.log(`Generation time: ${basicResult._tinylm?.time_ms}ms`);
-    }
-
-    // Example 2: Streaming speech generation for long text
-    console.log("\n=== Example 2: Streaming TTS for Long Text ===");
-    const longText = `
-    Streaming text-to-speech processes content in semantically meaningful chunks.
-    This creates more natural speech with proper phrasing and intonation.
-    Unlike non-streaming approaches, this maintains consistent prosody across sentence boundaries.
-    The implementation handles sentence boundaries, ensuring natural pauses between thoughts.
-    It's particularly useful for longer texts like articles or stories.
-    When texts are processed as a whole, long content can lose natural cadence and timing.
-    Streaming solves this by breaking content into manageable pieces.
-    Each piece receives appropriate voice styling based on its content and length.
-    The result is more human-like speech that's easier to follow and understand.
-    `;
-
-    console.log(`\nGenerating streaming speech for long text (${longText.length} characters)`);
-
-    // Generate speech with streaming enabled
-    const streamResult = await tiny.audio.speech.create({
-      model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
-      input: longText,
-      voice: 'af_bella',
-      response_format: 'wav',
-      stream: true // Enable streaming
-    });
-
-    // Check if result is a streaming result
-    if (isStreamResult(streamResult)) {
-      // Instead of trying to concatenate the chunks:
-      console.log("\nNOTE: Streaming mode produces multiple audio files - one per chunk.");
-      console.log("For production use, consider using a proper audio library for concatenation.");
-
-      // Save each chunk separately
-      for (let i = 0; i < streamResult.chunks.length; i++) {
-        const chunk = streamResult.chunks[i];
-        if (chunk) {
-          const chunkPath = path.join(outputDir, `stream_chunk_${i+1}.wav`);
-          fs.writeFileSync(chunkPath, Buffer.from(chunk.audio));
-          console.log(`Chunk ${i+1}: "${chunk.text.substring(0, 40)}..." saved to ${path.basename(chunkPath)}`);
+    // Create a new TinyLM instance with custom progress tracking
+    console.log('Initializing TinyLM...');
+    const tiny = new TinyLM({
+      progressTracker: new ProgressTracker((progress) => {
+        try {
+          console.log(formatProgress(progress));
+        } catch (error) {
+          // Fallback to simple logging
+          console.log(`[${progress.status}] ${progress.message || ''}`);
         }
+      }),
+      webgpuChecker
+    });
+
+    // Initialize TinyLM with the Kokoro model
+    await tiny.init({
+      ttsModels: ['onnx-community/Kokoro-82M-v1.0-ONNX'],
+      lazyLoad: false // Load the model immediately
+    });
+
+    // Generate speech
+    console.log('\nGenerating speech...');
+    const text = "Hello, this is a test of text to speech generation.";
+    const result = await tiny.audio.speech.create({
+      input: text,
+      voice: 'af', // Default voice
+      response_format: 'wav',
+      stream: false // Ensure we get a non-streaming result
+    }) as SpeechResult; // Type assertion since we know it's not streaming
+
+    // Save the audio to a file
+    const outputPath = 'output.wav';
+    await writeFile(outputPath, Buffer.from(result.audio));
+    console.log(`\nAudio saved to ${outputPath}`);
+
+    // Example 1: Basic non-streaming speech generation
+    console.log('\nGenerating basic speech...');
+    const shortText = 'Hello! This is a test of the TinyLM text-to-speech system.';
+    const basicResult = await tiny.audio.speech.create({
+      input: shortText,
+      voice: 'af',
+      response_format: 'mp3'
+    });
+
+    // Save basic result
+    if ('audio' in basicResult) {
+      const basicOutputPath = path.join(__dirname, 'output', 'basic_speech.mp3');
+      await fs.promises.mkdir(path.dirname(basicOutputPath), { recursive: true });
+      await fs.promises.writeFile(basicOutputPath, Buffer.from(basicResult.audio));
+      console.log(`Basic speech saved to: ${basicOutputPath}`);
+    }
+
+    // Example 2: Streaming speech generation for longer text
+    console.log('\nGenerating streaming speech...');
+    const longText = `
+      The quick brown fox jumps over the lazy dog.
+      This is a longer piece of text that demonstrates streaming speech generation.
+      Each sentence will be processed separately and returned as a chunk.
+      This allows for real-time playback and progress tracking.
+    `.trim();
+
+    const streamResult = await tiny.audio.speech.create({
+      input: longText,
+      voice: 'af',
+      response_format: 'mp3',
+      stream: true
+    });
+
+    // Save streaming chunks
+    if ('chunks' in streamResult) {
+      for (const chunk of streamResult.chunks) {
+        const chunkPath = path.join(__dirname, 'output', `stream_chunk_${streamResult.chunks.indexOf(chunk) + 1}.mp3`);
+        await fs.promises.writeFile(chunkPath, Buffer.from(chunk.audio));
+        console.log(`Chunk ${streamResult.chunks.indexOf(chunk) + 1} saved to: ${chunkPath}`);
+        console.log(`Text: "${chunk.text}"`);
       }
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("\nError during execution:", errorMessage);
-  }
 
-  console.log('\nText-to-speech example completed successfully!');
-  console.log(`Generated audio files are located in: ${outputDir}`);
+    // Cleanup
+    console.log('\nCleaning up...');
+    await tiny.models.offload({
+      model: 'onnx-community/Kokoro-82M-v1.0-ONNX',
+      type: ModelType.Audio
+    });
+    console.log('Model unloaded successfully');
+
+  } catch (error) {
+    console.error('Error:', error);
+  }
 }
 
-// Execute the example
-console.log('Starting TinyLM text-to-speech example...');
-runTextToSpeechExample().catch(error => {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  console.error('Error:', errorMessage);
-});
+// Run the example
+runTextToSpeechExample().catch(console.error);

@@ -11,7 +11,11 @@
  * - Multi-turn conversations
  */
 
-import { TinyLM, ProgressUpdate, CompletionChunk, FileInfo, OverallProgress } from '../../../src/index';
+import { TinyLM } from '../../../src/TinyLM';
+import { ProgressTracker } from '../../../src/ProgressTracker';
+import { WebGPUChecker } from '../../../src/WebGPUChecker';
+import { ModelType } from '../../../src/types';
+import type { ProgressUpdate, CompletionChunk, FileInfo, OverallProgress, CompletionResult } from '../../../src/types';
 
 // Format bytes to human-readable size
 function formatBytes(bytes: number | undefined): string {
@@ -54,9 +58,9 @@ function formatProgress(progress: ProgressUpdate): string {
   let color = '';
   let resetColor = '';
   if (typeof process !== 'undefined' && process.stdout &&
-      // TypeScript-safe check for hasColors method
-      typeof (process.stdout as any).hasColors === 'function' &&
-      (process.stdout as any).hasColors()) {
+    // TypeScript-safe check for hasColors method
+    typeof (process.stdout as any).hasColors === 'function' &&
+    (process.stdout as any).hasColors()) {
     // Terminal colors
     switch (type) {
       case 'system': color = '\x1b[36m'; break; // Cyan
@@ -123,7 +127,16 @@ function isAsyncGenerator(obj: any): obj is AsyncGenerator<CompletionChunk> {
 async function runTextGenerationExample(): Promise<void> {
   console.log('=== TinyLM Text Generation Example ===');
 
+  // Check hardware capabilities
+  console.log('Checking hardware capabilities...');
+  const webgpuChecker = new WebGPUChecker();
+  const capabilities = await webgpuChecker.check();
+  console.log(`WebGPU available: ${capabilities.isWebGPUSupported}`);
+  console.log(`FP16 supported: ${capabilities.fp16Supported}`);
+  console.log(`Backend: ${capabilities.adapterInfo?.name || 'unknown'}\n`);
+
   // Create a new TinyLM instance with custom progress tracking
+  console.log('Initializing TinyLM...');
   const tiny = new TinyLM({
     progressCallback: (progress: ProgressUpdate) => {
       try {
@@ -131,93 +144,50 @@ async function runTextGenerationExample(): Promise<void> {
       } catch (error) {
         // Fallback to simple logging
         console.log(`[${progress.status}] ${progress.message || ''}`);
-        console.error('Error formatting progress:', error);
       }
     },
-    progressThrottleTime: 100, // Update frequently to show progress
+    progressThrottleTime: 100
   });
 
   try {
-    // Check hardware capabilities first
-    console.log("\nChecking hardware capabilities...");
-    const capabilities = await tiny.models.check();
-    console.log("WebGPU available:", capabilities.isWebGPUSupported);
-    console.log("FP16 supported:", capabilities.fp16Supported);
-    if (capabilities.environment) {
-      console.log("Backend:", capabilities.environment.backend);
-    }
-
     // Initialize TinyLM
-    console.log("\nInitializing TinyLM...");
+    console.log('\nInitializing TinyLM...');
     await tiny.init({
-      models: ['HuggingFaceTB/SmolLM2-135M-Instruct'], // Use smaller model for faster loading
-      lazyLoad: true, // Don't load model yet
-    });
-
-    // Load the model explicitly with progress tracking
-    console.log("\nLoading model...");
-    console.log("This will show detailed per-file progress for downloads:");
-    await tiny.models.load({
-      model: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+      models: ['HuggingFaceTB/SmolLM2-135M-Instruct'], // Specify the model during initialization
+      lazyLoad: false // Load the model immediately
     });
 
     // Example 1: Basic non-streaming completion
     console.log("\n=== Example 1: Basic Completion ===");
-
-    const messages = [
-      { role: "system", content: "You are a helpful AI assistant." },
-      { role: "user", content: "What is artificial intelligence in one sentence?" }
-    ];
-
-    console.log("\nGenerating completion...");
     const response = await tiny.chat.completions.create({
       model: 'HuggingFaceTB/SmolLM2-135M-Instruct',
-      messages,
+      messages: [
+        { role: "system", content: "You are a helpful AI assistant." },
+        { role: "user", content: "What is artificial intelligence?" }
+      ],
       temperature: 0.7,
-      max_tokens: 100,
+      max_tokens: 100
     });
 
-    // Type guard to check if response is not an AsyncGenerator
     if (!isAsyncGenerator(response)) {
-      console.log("\nResponse:");
-      console.log(response.choices[0]?.message.content);
-      console.log(`\nGeneration time: ${response._tinylm?.time_ms}ms`);
-    }
-
-    // Example 2: True real-time streaming response
-    console.log("\n=== Example 2: True Real-Time Streaming Response ===");
-
-    const streamMessages = [
-      { role: "system", content: "You are a creative storyteller." },
-      { role: "user", content: "Write a short poem about technology." }
-    ];
-
-    console.log("\nGenerating streaming response (tokens appear in real-time)...");
-
-    const stream = await tiny.chat.completions.create({
-      model: 'HuggingFaceTB/SmolLM2-135M-Instruct',
-      messages: streamMessages,
-      temperature: 0.9,
-      max_tokens: 200,
-      stream: true,
-    });
-
-    console.log("\nResponse:");
-    let fullResponse = '';
-
-    if (isAsyncGenerator(stream)) {
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        fullResponse += content;
-
-        // Display content as it arrives
-        if (content) {
-          process.stdout.write(content);
-        }
+      const content = response.choices[0]?.message?.content;
+      if (content) {
+        console.log("\nResponse:", content);
       }
     }
 
-    console.log('\n'); // Add a newline after the streaming completes
+    // Example 2: Streaming completion
+    console.log("\n=== Example 2: Streaming Completion ===");
+    const stream = await tiny.chat.completions.create({
+      model: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+      messages: [
+        { role: "system", content: "You are a helpful AI assistant." },
+        { role: "user", content: "Explain the concept of machine learning in simple terms." }
+      ],
+      temperature: 0.7,
+      max_tokens: 150,
+      stream: true
+    });
 
     // Example 3: Multi-turn conversation
     console.log("\n=== Example 3: Multi-turn Conversation ===");
