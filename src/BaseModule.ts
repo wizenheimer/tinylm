@@ -5,8 +5,9 @@
 
 import { WebGPUChecker } from './WebGPUChecker';
 import { ProgressTracker } from './ProgressTracker';
-import { tryGarbageCollection, EnvironmentInfo } from './utils';
+import { tryGarbageCollection, detectEnvironment, EnvironmentInfo } from './utils';
 import { DeviceConfig } from './types';
+import { ModelManager } from './ModelManager';
 
 /**
  * Base interface for TinyLM modules
@@ -24,20 +25,19 @@ export interface TinyLMModule {
  * Base class for TinyLM modules with common functionality
  */
 export abstract class BaseModule implements TinyLMModule {
-  protected tinyLM: any;
   protected progressTracker: ProgressTracker;
   protected webgpuChecker: WebGPUChecker;
   protected environment: EnvironmentInfo;
 
   /**
    * Create a new module
-   * @param {any} tinyLM - Parent TinyLM instance
+   * @param {Object} options - Module options
+   * @param {ModelManager} options.modelManager - Model manager instance
    */
-  constructor(tinyLM: any) {
-    this.tinyLM = tinyLM;
-    this.progressTracker = tinyLM.getProgressTracker();
-    this.webgpuChecker = tinyLM.getWebGPUChecker();
-    this.environment = tinyLM.getEnvironment();
+  constructor(options: { modelManager: ModelManager }) {
+    this.progressTracker = options.modelManager['progressTracker'];
+    this.webgpuChecker = options.modelManager['webgpuChecker'];
+    this.environment = detectEnvironment();
   }
 
   /**

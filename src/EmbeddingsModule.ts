@@ -12,7 +12,9 @@ import {
 } from "@huggingface/transformers";
 
 import { BaseModule } from './BaseModule';
+import { ModelManager } from './ModelManager';
 import { EmbeddingCreateOptions, EmbeddingResult } from './types';
+import { ModelType } from './types';
 
 /**
  * Information about a loaded embedding model
@@ -29,7 +31,19 @@ interface EmbeddingModelInfo {
  * Embeddings module for TinyLM
  */
 export class EmbeddingsModule extends BaseModule {
-  private embeddingModels: Map<string, EmbeddingModelInfo> = new Map();
+  private modelManager: ModelManager;
+  private activeModel: string | null;
+
+  /**
+   * Create a new embeddings module
+   * @param {Object} options - Module options
+   * @param {ModelManager} options.modelManager - Model manager instance
+   */
+  constructor(options: { modelManager: ModelManager }) {
+    super(options);
+    this.modelManager = options.modelManager;
+    this.activeModel = null;
+  }
 
   /**
    * Initialize the embeddings module
@@ -43,7 +57,7 @@ export class EmbeddingsModule extends BaseModule {
     const { defaultModel } = options;
     if (defaultModel) {
       try {
-        await this._loadEmbeddingModel(defaultModel);
+        await this.modelManager.loadEmbeddingModel(defaultModel);
       } catch (error) {
         console.warn(`Failed to preload default embedding model: ${error}`);
       }
@@ -51,241 +65,76 @@ export class EmbeddingsModule extends BaseModule {
   }
 
   /**
-   * Create embeddings from text input
-   * @param {EmbeddingCreateOptions} options - Embedding creation options
-   * @returns {Promise<EmbeddingResult>} The embedding result
+   * Load an embedding model
    */
-  async create(options: EmbeddingCreateOptions): Promise<EmbeddingResult> {
-    const {
-      model,
-      input,
-      encoding_format = 'float',
-      dimensions
-    } = options;
-
-    // Ensure model is a valid string
-    if (!model || typeof model !== 'string') {
-      throw new Error('Valid model identifier is required');
-    }
-
-    // Normalize input to array of strings
-    const inputs = Array.isArray(input) ? input : [input];
-
-    // Validate inputs are strings
-    if (inputs.some(i => typeof i !== 'string')) {
-      throw new Error('Input must be a string or an array of strings');
-    }
-
-    // Track embedding generation
-    this.progressTracker.update({
-      status: 'loading',
-      type: 'embedding',
-      message: `Generating embeddings with model: ${model}`
-    });
-
+  async loadModel(model: string, dimensions?: number): Promise<EmbeddingModelInfo> {
     try {
-      // Load embedding model if needed
-      const modelInfo = await this._loadEmbeddingModel(model, dimensions);
-
-      // Generate embeddings
-      const embeddings = await this._generateEmbeddings(modelInfo, inputs);
-
-      // Convert embeddings to the requested format
-      const formattedEmbeddings = encoding_format === 'base64'
-        ? this._convertToBase64(embeddings)
-        : embeddings;
-
-      // Calculate token usage (estimate)
-      const tokenCounts = await this._countTokens(inputs, modelInfo.tokenizer);
-
-      // Format response in OpenAI-compatible format
-      const result: EmbeddingResult = {
-        object: 'list',
-        data: formattedEmbeddings.map((embedding, index) => ({
-          object: 'embedding',
-          embedding,
-          index
-        })),
+      const modelInfo = await this.modelManager.loadEmbeddingModel({
         model,
-        usage: {
-          prompt_tokens: tokenCounts.prompt_tokens,
-          total_tokens: tokenCounts.total_tokens
-        }
-      };
-
-      this.progressTracker.update({
-        status: 'complete',
-        type: 'embedding',
-        message: `Embedding generation complete`
+        type: ModelType.Embedding,
+        dimensions
       });
-
-      return result;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'embedding',
-        message: `Embedding generation error: ${errorMessage}`
-      });
-
-      throw new Error(`Failed to generate embeddings: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Load an embedding model using the appropriate strategy
-   * @private
-   * @param {string} model - Model identifier
-   * @param {number} dimensions - Optional dimensions to validate
-   * @returns {Promise<EmbeddingModelInfo>} Model information
-   */
-  private async _loadEmbeddingModel(model: string, dimensions?: number): Promise<EmbeddingModelInfo> {
-    // Check if model is already loaded
-    if (this.embeddingModels.has(model)) {
-      return this.embeddingModels.get(model)!;
-    }
-
-    this.progressTracker.update({
-      status: 'loading',
-      type: 'embedding_model',
-      message: `Loading embedding model: ${model}`
-    });
-
-    try {
-      // Check WebGPU capabilities and get optimal config
-      const capabilities = await this.webgpuChecker.check();
-      const config = await this.getOptimalDeviceConfig();
-
-      let modelInfo: EmbeddingModelInfo;
-
-      // Strategy based on WebGPU availability
-      if (capabilities.isWebGPUSupported) {
-        // WebGPU is available - try direct tokenizer+model approach first
-        try {
-          modelInfo = await this._loadWithTokenizerAndModel(model, config);
-        } catch (directError) {
-          // Direct approach failed, fall back to pipeline
-          console.warn('Direct model loading failed, falling back to pipeline:', directError);
-          modelInfo = await this._loadWithPipeline(model, config);
-        }
-      } else {
-        // WebGPU not available - use pipeline approach for simplicity
-        modelInfo = await this._loadWithPipeline(model, config);
-      }
-
-      // Validate dimensions if specified
-      if (dimensions && modelInfo.dimensions !== dimensions) {
-        console.warn(`Requested ${dimensions} dimensions but model provides ${modelInfo.dimensions} dimensions`);
-      }
-
-      // Store for reuse
-      this.embeddingModels.set(model, modelInfo);
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'embedding_model',
-        message: `Embedding model ${model} loaded successfully`
-      });
-
+      this.activeModel = model;
       return modelInfo;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'embedding_model',
-        message: `Error loading embedding model ${model}: ${errorMessage}`
-      });
-
       throw new Error(`Failed to load embedding model ${model}: ${errorMessage}`);
     }
   }
 
   /**
-   * Load model using direct tokenizer and model approach (preferred with WebGPU)
-   * @private
-   * @param {string} model - Model identifier
-   * @param {any} config - Device configuration
-   * @returns {Promise<EmbeddingModelInfo>} Model information
+   * Create embeddings from input text
    */
-  private async _loadWithTokenizerAndModel(model: string, config: any): Promise<EmbeddingModelInfo> {
-    // Progress callback for loading
-    const progressCallback = (component: string) => (progress: any) => {
-      this.progressTracker.update({
-        status: 'loading',
-        type: 'embedding_model',
-        message: `Loading ${component} for ${model}`,
-        progress: progress.progress,
-        percentComplete: progress.progress ? Math.round(progress.progress * 100) : undefined,
-        component,
-        ...progress
-      });
-    };
+  async create(options: EmbeddingCreateOptions): Promise<EmbeddingResult> {
+    const { model = this.activeModel, input, encoding_format = 'float' } = options;
 
-    // Load tokenizer
-    const tokenizer = await AutoTokenizer.from_pretrained(model, {
-      progress_callback: progressCallback('tokenizer')
-    });
+    if (!model) {
+      throw new Error('No model specified and no active model set');
+    }
 
-    // Load model with optimal configuration
-    const embeddingModel = await AutoModel.from_pretrained(model, {
-      ...(config.device ? { device: config.device } : {}),
-      ...(config.dtype ? { dtype: config.dtype } : {}),
-      progress_callback: progressCallback('model')
-    });
+    // Load model if needed
+    const modelInfo = await this.loadModel(model);
 
-    // Determine model dimensions
-    const dimensions = this._getModelDimensions(embeddingModel);
+    // Convert input to array if string
+    const inputs = Array.isArray(input) ? input : [input];
+
+    // Get embeddings
+    const startTime = Date.now();
+    const embeddings = await this._generateEmbeddings(modelInfo, inputs);
+    const timeMs = Date.now() - startTime;
+
+    // Calculate token usage (estimate)
+    const tokenCounts = await this._countTokens(inputs, modelInfo.tokenizer);
+
+    // Convert embeddings to the requested format if needed
+    const formattedEmbeddings = encoding_format === 'base64'
+      ? this._convertToBase64(embeddings)
+      : embeddings;
 
     return {
-      tokenizer,
-      model: embeddingModel,
-      dimensions
-    };
-  }
-
-  /**
-   * Load model using pipeline approach (fallback method)
-   * @private
-   * @param {string} model - Model identifier
-   * @param {any} config - Device configuration
-   * @returns {Promise<EmbeddingModelInfo>} Model information
-   */
-  private async _loadWithPipeline(model: string, config: any): Promise<EmbeddingModelInfo> {
-    // Load using feature-extraction pipeline
-    const embeddingPipeline = await pipeline('feature-extraction', model, {
-      ...(config.device ? { device: config.device } : {}),
-      ...(config.dtype ? { dtype: config.dtype } : {}),
-      progress_callback: (progress: any) => {
-        this.progressTracker.update({
-          status: 'loading',
-          type: 'embedding_model',
-          message: `Loading pipeline for ${model}`,
-          progress: progress.progress,
-          percentComplete: progress.progress ? Math.round(progress.progress * 100) : undefined,
-          ...progress
-        });
+      object: 'list',
+      data: formattedEmbeddings.map((embedding, index) => ({
+        object: 'embedding',
+        embedding,
+        index
+      })),
+      model,
+      usage: {
+        prompt_tokens: tokenCounts.prompt_tokens,
+        total_tokens: tokenCounts.total_tokens
+      },
+      _tinylm: {
+        time_ms: timeMs,
+        dimensions: modelInfo.dimensions
       }
-    });
-
-    // Determine dimensions from the pipeline's model
-    const dimensions = this._getModelDimensions(embeddingPipeline.model);
-
-    return {
-      tokenizer: embeddingPipeline.tokenizer,
-      model: embeddingPipeline.model,
-      pipeline: embeddingPipeline,
-      dimensions
     };
   }
 
   /**
    * Generate embeddings for the input texts
    * @private
-   * @param {EmbeddingModelInfo} modelInfo - Model information
-   * @param {string[]} inputs - Input texts
-   * @returns {Promise<number[][]>} Raw embeddings
    */
-  private async _generateEmbeddings(modelInfo: EmbeddingModelInfo, inputs: string[]): Promise<number[][]> {
+  private async _generateEmbeddings(modelInfo: any, inputs: string[]): Promise<number[][]> {
     // If we have a pipeline, use that for simplicity
     if (modelInfo.pipeline) {
       try {
@@ -343,135 +192,36 @@ export class EmbeddingsModule extends BaseModule {
   }
 
   /**
-   * Convert float embeddings to base64 encoding
+   * Convert embeddings to base64 format
    * @private
-   * @param {number[][]} embeddings - Float embeddings
-   * @returns {string[]} Base64 encoded embeddings
    */
   private _convertToBase64(embeddings: number[][]): string[] {
     return embeddings.map(embedding => {
-      // Convert to Float32Array
-      const float32Array = new Float32Array(embedding);
-
-      // Convert to binary
-      const buffer = new Uint8Array(float32Array.buffer);
-
-      // Convert to base64
-      return this._arrayBufferToBase64(buffer);
+      const buffer = new Float32Array(embedding).buffer;
+      return Buffer.from(buffer).toString('base64');
     });
   }
 
   /**
-   * Helper to convert array buffer to base64
+   * Count tokens in input texts
    * @private
-   * @param {Uint8Array} buffer - Binary buffer
-   * @returns {string} Base64 string
    */
-  private _arrayBufferToBase64(buffer: Uint8Array): string {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
+  private async _countTokens(inputs: string[], tokenizer: any): Promise<{ prompt_tokens: number; total_tokens: number }> {
+    const tokenCounts = await Promise.all(
+      inputs.map(text => tokenizer.encode(text).length)
+    );
 
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]!);
-    }
-
-    // Use btoa in browser, Buffer in Node.js
-    if (typeof btoa === 'function') {
-      return btoa(binary);
-    } else if (typeof Buffer !== 'undefined') {
-      return Buffer.from(binary, 'binary').toString('base64');
-    }
-
-    throw new Error('Base64 encoding not available in this environment');
-  }
-
-  /**
-   * Get the output dimensions of a model
-   * @private
-   * @param {any} model - The model object
-   * @returns {number} Model dimension
-   */
-  private _getModelDimensions(model: any): number {
-    // Try to determine dimensions from model config or structure
-    try {
-      // Check model config
-      if (model.config && model.config.hidden_size) {
-        return model.config.hidden_size;
-      }
-
-      // Check config.d_model (common in some models)
-      if (model.config && model.config.d_model) {
-        return model.config.d_model;
-      }
-
-      // Check for special properties in sentence transformers
-      if (model.config && model.config.sentence_embedding_dimension) {
-        return model.config.sentence_embedding_dimension;
-      }
-
-      // Default dimensions for common embedding models
-      return 768; // Common size for many transformer models
-    } catch (e) {
-      console.warn('Could not determine model dimensions, using default 768');
-      return 768;
-    }
-  }
-
-  /**
-   * Count tokens in the input texts
-   * @private
-   * @param {string[]} inputs - Input texts
-   * @param {any} tokenizer - Tokenizer
-   * @returns {Promise<{prompt_tokens: number, total_tokens: number}>} Token counts
-   */
-  private async _countTokens(inputs: string[], tokenizer: any): Promise<{prompt_tokens: number, total_tokens: number}> {
-    let prompt_tokens = 0;
-
-    // Count tokens for each input
-    for (const text of inputs) {
-      try {
-        const encoded = await tokenizer.encode(text);
-        prompt_tokens += Array.isArray(encoded) ? encoded.length : 0;
-      } catch (error) {
-        // If tokenizer.encode fails, make a rough estimate
-        prompt_tokens += Math.ceil(text.length / 4); // Rough approximation
-      }
-    }
-
+    const total = tokenCounts.reduce((sum, count) => sum + count, 0);
     return {
-      prompt_tokens,
-      total_tokens: prompt_tokens
+      prompt_tokens: total,
+      total_tokens: total
     };
   }
 
   /**
-   * Offload an embedding model from memory
-   * @param {string} model - Model identifier
-   * @returns {Promise<boolean>} Success status
+   * Offload a model from memory
    */
   async offloadModel(model: string): Promise<boolean> {
-    if (!this.embeddingModels.has(model)) {
-      return false;
-    }
-
-    try {
-      // Remove from registry
-      this.embeddingModels.delete(model);
-
-      // Try to trigger garbage collection
-      this.triggerGC();
-
-      this.progressTracker.update({
-        status: 'offloaded',
-        type: 'embedding_model',
-        message: `Embedding model ${model} offloaded from memory`
-      });
-
-      return true;
-    } catch (error) {
-      console.error(`Error offloading embedding model ${model}:`, error);
-      return false;
-    }
+    return this.modelManager.offloadEmbeddingModel(model);
   }
 }

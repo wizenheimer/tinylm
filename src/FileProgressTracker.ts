@@ -13,6 +13,27 @@ export class FileProgressTracker {
   private files: Map<string, FileInfo> = new Map();
   private totalBytes: number = 0;
   private loadedBytes: number = 0;
+  private _overallProgress: OverallProgress = {
+    progress: 0,
+    percentComplete: 0,
+    bytesLoaded: 0,
+    bytesTotal: 0,
+    activeFileCount: 0,
+    totalFileCount: 0,
+    speed: 0,
+    timeRemaining: 0,
+    formattedLoaded: '0 B',
+    formattedTotal: '0 B',
+    formattedSpeed: '0 B/s',
+    formattedRemaining: '0s',
+    isComplete: false,
+    hasError: false
+  };
+
+  constructor() {
+    this.totalBytes = 0;
+    this.loadedBytes = 0;
+  }
 
   /**
    * Register a new file for tracking
@@ -50,119 +71,38 @@ export class FileProgressTracker {
   }
 
   /**
-   * Update progress for a specific file
-   * @param {string} fileId - File identifier
-   * @param {Partial<FileInfo>} update - Progress update
-   * @returns {FileInfo} Updated file info
+   * Update progress for a file
    */
-  updateFile(fileId: string, update: Partial<FileInfo>): FileInfo {
-    if (!this.files.has(fileId)) {
-      return this.registerFile(fileId, update);
-    }
+  update(progress: any): void {
+    const fileId = progress.file || progress.url || Date.now().toString();
+    const file = this.getOrCreateFile(fileId);
 
-    const fileInfo = this.files.get(fileId)!;
-    const now = Date.now();
-    const timeDelta = (now - fileInfo.lastUpdateTime) / 1000; // seconds
+    // Update file progress
+    file.progress = progress.progress || 0;
+    file.percentComplete = progress.progress ? Math.round(progress.progress * 100) : 0;
+    file.bytesLoaded = progress.loaded || 0;
+    file.bytesTotal = progress.total || 0;
+    file.lastUpdateTime = Date.now();
 
-    // Calculate bytes delta for speed estimation
-    let bytesDelta = 0;
-    if (update.progress !== undefined && update.total !== undefined) {
-      // If we have new progress/total info (compatibility with JS version)
-      const newBytesLoaded = update.progress;
-      bytesDelta = newBytesLoaded - fileInfo.bytesLoaded;
-
-      // Update total bytes if it changed
-      if (update.total !== fileInfo.bytesTotal && update.total > 0) {
-        this.totalBytes = this.totalBytes - fileInfo.bytesTotal + update.total;
-        fileInfo.bytesTotal = update.total;
-      }
-
-      // Update loaded bytes
-      this.loadedBytes = this.loadedBytes - fileInfo.bytesLoaded + newBytesLoaded;
-      fileInfo.bytesLoaded = newBytesLoaded;
-
-      // Calculate percentage
-      if (fileInfo.bytesTotal > 0) {
-        fileInfo.progress = fileInfo.bytesLoaded / fileInfo.bytesTotal;
-        fileInfo.percentComplete = Math.round(fileInfo.progress * 100);
-      }
-    } else if (update.bytesLoaded !== undefined && update.bytesTotal !== undefined) {
-      // Support for explicit bytesLoaded/bytesTotal (TS version preference)
-      const newBytesLoaded = update.bytesLoaded;
-      bytesDelta = newBytesLoaded - fileInfo.bytesLoaded;
-
-      // Update total bytes if it changed
-      if (update.bytesTotal !== fileInfo.bytesTotal && update.bytesTotal > 0) {
-        this.totalBytes = this.totalBytes - fileInfo.bytesTotal + update.bytesTotal;
-        fileInfo.bytesTotal = update.bytesTotal;
-      }
-
-      // Update loaded bytes
-      this.loadedBytes = this.loadedBytes - fileInfo.bytesLoaded + newBytesLoaded;
-      fileInfo.bytesLoaded = newBytesLoaded;
-
-      // Calculate percentage
-      if (fileInfo.bytesTotal > 0) {
-        fileInfo.progress = fileInfo.bytesLoaded / fileInfo.bytesTotal;
-        fileInfo.percentComplete = Math.round(fileInfo.progress * 100);
+    // Calculate speed and time remaining
+    const timeDiff = (file.lastUpdateTime - file.startTime) / 1000; // in seconds
+    if (timeDiff > 0) {
+      file.speed = file.bytesLoaded / timeDiff;
+      if (file.speed > 0) {
+        const bytesRemaining = file.bytesTotal - file.bytesLoaded;
+        file.timeRemaining = bytesRemaining / file.speed;
       }
     }
 
-    // Calculate speed (bytes per second) with some smoothing
-    if (timeDelta > 0 && bytesDelta > 0) {
-      const instantSpeed = bytesDelta / timeDelta;
-      // Smooth speed calculation (70% previous, 30% new)
-      fileInfo.speed = fileInfo.speed === 0
-        ? instantSpeed
-        : (fileInfo.speed * 0.7) + (instantSpeed * 0.3);
-
-      // Calculate time remaining
-      if (fileInfo.speed > 0 && fileInfo.bytesTotal > fileInfo.bytesLoaded) {
-        const bytesRemaining = fileInfo.bytesTotal - fileInfo.bytesLoaded;
-        fileInfo.timeRemaining = bytesRemaining / fileInfo.speed;
-      }
-    }
-
-    // Update status
-    if (update.status) {
-      fileInfo.status = update.status;
-
-      if (update.status === 'done' || update.status === 'complete') {
-        fileInfo.progress = 1;
-        fileInfo.percentComplete = 100;
-        fileInfo.timeRemaining = 0;
-
-        // Ensure consistency with bytes
-        if (fileInfo.bytesTotal > 0 && fileInfo.bytesLoaded !== fileInfo.bytesTotal) {
-          this.loadedBytes = this.loadedBytes - fileInfo.bytesLoaded + fileInfo.bytesTotal;
-          fileInfo.bytesLoaded = fileInfo.bytesTotal;
-        }
-      }
-    }
-
-    // Update any other properties
-    Object.assign(fileInfo, update);
-    fileInfo.lastUpdateTime = now;
-
-    return fileInfo;
+    // Update overall progress
+    this.updateOverallProgress();
   }
 
   /**
-   * Mark a file as complete
-   * @param {string} fileId - File identifier
-   * @returns {FileInfo | null} Updated file info or null if not found
+   * Get all tracked files
    */
-  completeFile(fileId: string): FileInfo | null {
-    if (!this.files.has(fileId)) {
-      return null;
-    }
-
-    return this.updateFile(fileId, {
-      status: 'done',
-      progress: 1,
-      percentComplete: 100,
-      timeRemaining: 0
-    });
+  getAllFiles(): FileInfo[] {
+    return Array.from(this.files.values());
   }
 
   /**
@@ -175,14 +115,6 @@ export class FileProgressTracker {
   }
 
   /**
-   * Get information about all tracked files
-   * @returns {FileInfo[]} Array of file information objects
-   */
-  getAllFiles(): FileInfo[] {
-    return Array.from(this.files.values());
-  }
-
-  /**
    * Get active (incomplete) files
    * @returns {FileInfo[]} Array of active file information objects
    */
@@ -192,77 +124,10 @@ export class FileProgressTracker {
   }
 
   /**
-   * Get overall progress across all files
-   * @returns {OverallProgress} Overall progress information
+   * Get overall progress
    */
   getOverallProgress(): OverallProgress {
-    const files = this.getAllFiles();
-    const activeFiles = this.getActiveFiles();
-
-    // Calculate weighted overall progress
-    let overallProgress = 0;
-    if (this.totalBytes > 0) {
-      overallProgress = this.loadedBytes / this.totalBytes;
-    } else if (files.length > 0) {
-      // Fallback to simple average if we don't have byte information
-      const progressSum = files.reduce((sum, file) => sum + file.progress, 0);
-      overallProgress = progressSum / files.length;
-    }
-
-    const percentComplete = Math.round(overallProgress * 100);
-
-    // Calculate overall speed and time remaining
-    let overallSpeed = 0;
-    let maxTimeRemaining = 0;
-
-    activeFiles.forEach(file => {
-      overallSpeed += file.speed || 0;
-      if (file.timeRemaining !== null && file.timeRemaining > maxTimeRemaining) {
-        maxTimeRemaining = file.timeRemaining;
-      }
-    });
-
-    // Format for human-readable size and time
-    const formatBytes = (bytes: number): string => {
-      if (bytes === 0) return '0 B';
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(1024));
-      return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
-    };
-
-    const formatTime = (seconds: number | null): string => {
-      if (!seconds || seconds === 0) return '';
-      if (seconds < 60) return `${Math.ceil(seconds)}s`;
-      if (seconds < 3600) {
-        const minutes = Math.floor(seconds / 60);
-        const secs = Math.ceil(seconds % 60);
-        return `${minutes}m ${secs}s`;
-      }
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      return `${hours}h ${minutes}m`;
-    };
-
-    return {
-      progress: overallProgress,
-      percentComplete,
-      bytesLoaded: this.loadedBytes,
-      bytesTotal: this.totalBytes,
-      activeFileCount: activeFiles.length,
-      totalFileCount: files.length,
-      speed: overallSpeed, // bytes per second
-      timeRemaining: maxTimeRemaining, // most conservative estimate (longest file)
-
-      // Human readable formats
-      formattedLoaded: formatBytes(this.loadedBytes),
-      formattedTotal: formatBytes(this.totalBytes),
-      formattedSpeed: formatBytes(overallSpeed) + '/s',
-      formattedRemaining: formatTime(maxTimeRemaining),
-
-      // Status flags
-      isComplete: activeFiles.length === 0 && files.length > 0,
-      hasError: files.some(file => file.status === 'error')
-    };
+    return this._overallProgress;
   }
 
   /**
@@ -272,5 +137,107 @@ export class FileProgressTracker {
     this.files.clear();
     this.totalBytes = 0;
     this.loadedBytes = 0;
+  }
+
+  /**
+   * Get or create a file entry
+   */
+  private getOrCreateFile(fileId: string): FileInfo {
+    if (!this.files.has(fileId)) {
+      const now = Date.now();
+      const file: FileInfo = {
+        id: fileId,
+        name: fileId,
+        status: 'loading',
+        progress: 0,
+        percentComplete: 0,
+        bytesLoaded: 0,
+        bytesTotal: 0,
+        startTime: now,
+        lastUpdateTime: now,
+        speed: 0,
+        timeRemaining: null
+      };
+      this.files.set(fileId, file);
+      return file;
+    }
+    return this.files.get(fileId)!;
+  }
+
+  /**
+   * Update overall progress
+   */
+  private updateOverallProgress(): void {
+    let totalBytes = 0;
+    let loadedBytes = 0;
+    let activeFiles = 0;
+    let totalFiles = this.files.size;
+    let maxSpeed = 0;
+    let maxTimeRemaining = 0;
+
+    for (const file of this.files.values()) {
+      if (file.bytesTotal > 0) {
+        totalBytes += file.bytesTotal;
+        loadedBytes += file.bytesLoaded;
+      }
+      if (file.status === 'loading') {
+        activeFiles++;
+        if (file.speed > maxSpeed) maxSpeed = file.speed;
+        if (file.timeRemaining && file.timeRemaining > maxTimeRemaining) {
+          maxTimeRemaining = file.timeRemaining;
+        }
+      }
+    }
+
+    this._overallProgress = {
+      progress: totalBytes > 0 ? loadedBytes / totalBytes : 0,
+      percentComplete: totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 100) : 0,
+      bytesLoaded: loadedBytes,
+      bytesTotal: totalBytes,
+      activeFileCount: activeFiles,
+      totalFileCount: totalFiles,
+      speed: maxSpeed,
+      timeRemaining: maxTimeRemaining,
+      formattedLoaded: this.formatBytes(loadedBytes),
+      formattedTotal: this.formatBytes(totalBytes),
+      formattedSpeed: this.formatSpeed(maxSpeed),
+      formattedRemaining: this.formatTime(maxTimeRemaining),
+      isComplete: activeFiles === 0 && totalFiles > 0,
+      hasError: false
+    };
+  }
+
+  /**
+   * Format bytes to human readable string
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  }
+
+  /**
+   * Format speed to human readable string
+   */
+  private formatSpeed(bytesPerSecond: number): string {
+    if (bytesPerSecond === 0) return '0 B/s';
+    return `${this.formatBytes(bytesPerSecond)}/s`;
+  }
+
+  /**
+   * Format time to human readable string
+   */
+  private formatTime(seconds: number): string {
+    if (!seconds || seconds === 0) return '0s';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.round(seconds % 60);
+    const parts = [];
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    if (s > 0) parts.push(`${s}s`);
+    return parts.join(' ');
   }
 }

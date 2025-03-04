@@ -1,24 +1,29 @@
 import { BaseModule } from './BaseModule';
 import { TTSEngine, AudioChunk } from './TTSEngine';
-import { SpeechCreateOptions, SpeechResult, SpeechStreamResult } from './types';
+import { ModelManager } from './ModelManager';
+import {
+  SpeechCreateOptions,
+  SpeechResult,
+  SpeechStreamResult,
+  ModelType
+} from './types';
 // import { splitTextIntoSentences, ensureSafeTokenLength } from './TextSplitter';
 
 /**
  * Audio module for TinyLM
  */
 export class AudioModule extends BaseModule {
-  private ttsEngine: TTSEngine;
+  private modelManager: ModelManager;
   private activeModel: string | null = null;
-  private modelRegistry: Map<string, boolean> = new Map();
-  private modelIsLoading: boolean = false;
 
   /**
    * Create a new audio module
-   * @param {any} tinyLM - Parent TinyLM instance
+   * @param {Object} options - Module options
+   * @param {ModelManager} options.modelManager - Model manager instance
    */
-  constructor(tinyLM: any) {
-    super(tinyLM);
-    this.ttsEngine = new TTSEngine();
+  constructor(options: { modelManager: ModelManager }) {
+    super(options);
+    this.modelManager = options.modelManager;
   }
 
   /**
@@ -67,92 +72,18 @@ export class AudioModule extends BaseModule {
       throw new Error('Model identifier is required');
     }
 
-    // Return if already loading
-    if (this.modelIsLoading) {
-      throw new Error('Another model is currently loading');
-    }
-
-    // Set as active and return if already loaded
-    if (this.modelRegistry.get(model) === true) {
-      this.activeModel = model;
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'tts_model',
-        progress: 1,
-        percentComplete: 100,
-        message: `Model ${model} is already loaded`
-      });
-
-      return true;
-    }
-
-    // Set loading state
-    this.modelIsLoading = true;
-    this.activeModel = model;
-
     try {
-      // Check hardware capabilities
-      const capabilities = await this.webgpuChecker.check();
-
-      // Get optimal config
-      const config = await this.getOptimalDeviceConfig();
-
-      // For TTS models, always use CPU in Node.js environment or proper fallback
-      const isNode = this.isNodeEnvironment();
-
-      // Determine device explicitly
-      const device = isNode ? "cpu" :
-                    !capabilities.isWebGPUSupported ? "wasm" : "webgpu";
-
-      // Initial progress message
-      this.progressTracker.update({
-        status: 'loading',
-        type: 'tts_model',
-        progress: 0,
-        percentComplete: 0,
-        message: `Loading TTS model ${model} (device="${device}", dtype="${"fp32"}")`
+      const success = await this.modelManager.loadAudioModel({
+        model,
+        type: ModelType.Audio
       });
-
-      // Load the model directly by name
-      await this.ttsEngine.loadModel(model, {
-        onProgress: (progress: any) => {
-          this.progressTracker.update({
-            status: 'loading',
-            type: 'tts_model',
-            message: `Loading TTS model: ${model}`,
-            progress: progress.progress,
-            percentComplete: progress.progress ? Math.round(progress.progress * 100) : undefined,
-            ...progress
-          });
-        },
-        device: device,
-        dtype: "fp32", // TEMPFIX: config.dtype
-      });
-
-      // Register the model as loaded
-      this.modelRegistry.set(model, true);
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'tts_model',
-        progress: 1,
-        percentComplete: 100,
-        message: `TTS model ${model} loaded successfully`
-      });
-
-      return true;
+      if (success) {
+        this.activeModel = model;
+      }
+      return success;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'tts_model',
-        message: `Error loading TTS model ${model}: ${errorMessage}`
-      });
-
       throw new Error(`Failed to load TTS model ${model}: ${errorMessage}`);
-    } finally {
-      this.modelIsLoading = false;
     }
   }
 
@@ -168,7 +99,7 @@ export class AudioModule extends BaseModule {
       voice = 'af',
       response_format = 'mp3',
       speed = 1.0,
-      stream = false // New streaming parameter
+      stream = false
     } = options;
 
     // Load model if specified and different from current
@@ -177,7 +108,7 @@ export class AudioModule extends BaseModule {
     }
 
     // Check if a model is loaded
-    if (!this.activeModel || !this.modelRegistry.get(this.activeModel)) {
+    if (!this.activeModel || !this.modelManager.isAudioModelLoaded(this.activeModel)) {
       throw new Error('No TTS model loaded. Specify a model or call loadModel() first.');
     }
 
@@ -189,9 +120,10 @@ export class AudioModule extends BaseModule {
 
     try {
       const startTime = Date.now();
+      const ttsEngine = this.modelManager.getTTSEngine();
 
       // Generate speech with or without streaming
-      const result = await this.ttsEngine.generateSpeech(input, {
+      const result = await ttsEngine.generateSpeech(input, {
         voice,
         speed,
         stream
@@ -252,63 +184,15 @@ export class AudioModule extends BaseModule {
 
   /**
    * Offload a TTS model from memory
-   * @param {Object} options - Offload options
+   * @param {string} model - Model identifier
    * @returns {Promise<boolean>} Success status
    */
-  async offloadModel(options: { model: string }): Promise<boolean> {
-    const { model } = options;
-
-    if (!model) {
-      throw new Error('Model identifier is required');
+  async offloadModel(model: string): Promise<boolean> {
+    const success = await this.modelManager.offloadAudioModel(model);
+    if (success && this.activeModel === model) {
+      this.activeModel = null;
     }
-
-    if (!this.modelRegistry.has(model)) {
-      return false;
-    }
-
-    this.progressTracker.update({
-      status: 'offloading',
-      type: 'tts_model',
-      message: `Offloading TTS model ${model}`
-    });
-
-    try {
-      // Remove from registry
-      this.modelRegistry.delete(model);
-
-      // Clear current model if it's the active one
-      if (this.activeModel === model) {
-        this.activeModel = null;
-      }
-
-      // Try to trigger garbage collection
-      this.triggerGC();
-
-      this.progressTracker.update({
-        status: 'offloaded',
-        type: 'tts_model',
-        message: `TTS model ${model} removed from memory`
-      });
-
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'tts_model',
-        message: `Error offloading TTS model ${model}: ${errorMessage}`
-      });
-
-      return false;
-    }
-  }
-
-  /**
-   * Get active model identifier
-   * @returns {string|null} Active model identifier
-   */
-  getActiveModel(): string | null {
-    return this.activeModel;
+    return success;
   }
 
   /**
@@ -316,8 +200,6 @@ export class AudioModule extends BaseModule {
    * @returns {string[]} Array of model identifiers
    */
   getLoadedModels(): string[] {
-    return Array.from(this.modelRegistry.entries())
-      .filter(([_, loaded]) => loaded)
-      .map(([model, _]) => model);
+    return this.modelManager.getLoadedModels(ModelType.Audio);
   }
 }

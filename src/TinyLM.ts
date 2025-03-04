@@ -8,6 +8,8 @@ import { WebGPUChecker } from './WebGPUChecker';
 import { GenerationModule } from './GenerationModule';
 import { EmbeddingsModule } from './EmbeddingsModule';
 import { AudioModule } from './AudioModule';
+import { ModelManager } from './ModelManager';
+import { FileProgressTracker } from './FileProgressTracker';
 
 import {
   TinyLMOptions,
@@ -21,18 +23,27 @@ import {
   EmbeddingResult,
   SpeechCreateOptions,
   SpeechResult,
-  SpeechStreamResult
+  SpeechStreamResult,
+  ProgressUpdate,
+  ModelType,
+  BaseModelLoadOptions,
+  GenerationModelLoadOptions,
+  EmbeddingModelLoadOptions,
+  AudioModelLoadOptions,
+  GenerationResult,
+  AudioResult
 } from './types';
 
 /**
  * Main TinyLM class that provides the OpenAI-compatible API
  */
 export class TinyLM {
-  private options: Required<TinyLMOptions>;
+  private options: TinyLMOptions;
   private progressTracker: ProgressTracker;
   private webgpuChecker: WebGPUChecker;
   private initialized: boolean = false;
   private environment: EnvironmentInfo;
+  private modelManager: ModelManager;
 
   // Modules
   private generationModule: GenerationModule;
@@ -52,21 +63,18 @@ export class TinyLM {
   };
 
   readonly audio: {
-  speech: {
-    create: (options: SpeechCreateOptions) => Promise<SpeechResult | SpeechStreamResult>;
+    speech: {
+      create: (options: SpeechCreateOptions) => Promise<SpeechResult | SpeechStreamResult>;
+    };
   };
-}
 
   readonly models: {
-    load: (options: ModelLoadOptions) => Promise<any>;
-    offload: (options: { model: string }) => Promise<boolean>;
+    load: (options: BaseModelLoadOptions) => Promise<any>;
+    offload: (options: BaseModelLoadOptions) => Promise<boolean>;
     interrupt: () => boolean;
     reset: () => void;
     check: () => Promise<CapabilityInfo>;
-    list: () => string[];
-    loadTTS: (options: { model: string }) => Promise<boolean>;
-    offloadTTS: (options: { model: string }) => Promise<boolean>;
-    listTTS: () => string[];
+    list: (type?: ModelType) => string[];
   };
 
   /**
@@ -75,25 +83,31 @@ export class TinyLM {
    */
   constructor(options: TinyLMOptions = {}) {
     this.options = {
-      progressCallback: options.progressCallback || (() => {}),
-      progressThrottleTime: options.progressThrottleTime || 100,
-      ...options
-    } as Required<TinyLMOptions>;
+      debug: options.debug ?? false,
+      lazyLoad: options.lazyLoad ?? false,
+      progressCallback: options.progressCallback ?? ((progress: ProgressUpdate) => { }),
+      progressThrottleTime: options.progressThrottleTime ?? 100
+    };
 
     // Detect the current environment
     this.environment = detectEnvironment();
 
-    // Initialize components
-    this.progressTracker = new ProgressTracker(
-      this.options.progressCallback,
-      { throttleTime: this.options.progressThrottleTime }
-    );
+    // Initialize core components
     this.webgpuChecker = new WebGPUChecker();
+    this.progressTracker = new ProgressTracker(
+      options.progressCallback,
+      { throttleTime: options.progressThrottleTime }
+    );
+
+    this.modelManager = new ModelManager({
+      webgpuChecker: this.webgpuChecker,
+      progressTracker: this.progressTracker
+    });
 
     // Initialize modules
-    this.generationModule = new GenerationModule(this);
-    this.embeddingsModule = new EmbeddingsModule(this);
-    this.audioModule = new AudioModule(this);
+    this.generationModule = new GenerationModule({ modelManager: this.modelManager });
+    this.embeddingsModule = new EmbeddingsModule({ modelManager: this.modelManager });
+    this.audioModule = new AudioModule({ modelManager: this.modelManager });
 
     // Create API structure similar to OpenAI
     this.chat = {
@@ -107,6 +121,7 @@ export class TinyLM {
       create: this.embeddingsModule.create.bind(this.embeddingsModule)
     };
 
+    // Audio API
     this.audio = {
       speech: {
         create: this.audioModule.createSpeech.bind(this.audioModule)
@@ -115,16 +130,56 @@ export class TinyLM {
 
     // Model management API
     this.models = {
-      load: this.generationModule.loadModel.bind(this.generationModule),
-      offload: this.generationModule.offloadModel.bind(this.generationModule),
+      load: async (options: BaseModelLoadOptions) => {
+        return this.modelManager.loadModel(options);
+      },
+      offload: async (options: BaseModelLoadOptions) => {
+        return this.modelManager.offloadModel(options);
+      },
       interrupt: this.generationModule.interrupt.bind(this.generationModule),
       reset: this.generationModule.reset.bind(this.generationModule),
       check: this.checkCapabilities.bind(this),
-      list: () => Array.from(this.generationModule.getModelRegistry().keys()),
-      loadTTS: this.audioModule.loadModel.bind(this.audioModule),
-      offloadTTS: this.audioModule.offloadModel.bind(this.audioModule),
-      listTTS: this.audioModule.getLoadedModels.bind(this.audioModule)
+      list: (type?: ModelType) => {
+        return this.modelManager.getLoadedModels(type);
+      }
     };
+  }
+
+  /**
+   * Initialize TinyLM with models
+   * @param {InitOptions} options - Initialization options
+   * @returns {Promise<TinyLM>} This instance
+   */
+  async init(options: InitOptions = {}): Promise<TinyLM> {
+    if (!this.initialized) {
+      // Check hardware capabilities
+      const capabilities = await this.checkCapabilities();
+      this.progressTracker.update({
+        status: 'init',
+        type: 'system',
+        message: `Hardware check: WebGPU ${capabilities.isWebGPUSupported ? 'available' : 'not available'}`
+      });
+
+      // Initialize modules
+      await this.generationModule.init({
+        models: options.models || [],
+        lazyLoad: options.lazyLoad
+      });
+
+      await this.embeddingsModule.init({
+        defaultModel: options.embeddingModels && options.embeddingModels.length > 0
+          ? options.embeddingModels[0]
+          : undefined
+      });
+
+      await this.audioModule.init({
+        ttsModels: options.ttsModels || [],
+        lazyLoad: options.lazyLoad
+      });
+
+      this.initialized = true;
+    }
+    return this;
   }
 
   /**
@@ -171,43 +226,6 @@ export class TinyLM {
   }
 
   /**
-   * Initialize TinyLM with models
-   * @param {InitOptions} options - Initialization options
-   * @returns {Promise<TinyLM>} This instance
-   */
-  async init(options: InitOptions = {}): Promise<TinyLM> {
-    if (!this.initialized) {
-      // Check hardware capabilities
-      const capabilities = await this.checkCapabilities();
-      this.progressTracker.update({
-        status: 'init',
-        type: 'system',
-        message: `Hardware check: WebGPU ${capabilities.isWebGPUSupported ? 'available' : 'not available'}`
-      });
-
-      // Initialize modules
-      await this.generationModule.init({
-        models: options.models || [],
-        lazyLoad: options.lazyLoad
-      });
-
-      await this.embeddingsModule.init({
-        defaultModel: options.embeddingModels && options.embeddingModels.length > 0
-          ? options.embeddingModels[0]
-          : undefined
-      });
-
-      await this.audioModule.init({
-        ttsModels: options.ttsModels || [],
-        lazyLoad: options.lazyLoad
-      });
-
-      this.initialized = true;
-    }
-    return this;
-  }
-
-  /**
    * Get the progress tracker instance (for module access)
    * @returns {ProgressTracker} Progress tracker
    */
@@ -221,6 +239,14 @@ export class TinyLM {
    */
   getWebGPUChecker(): WebGPUChecker {
     return this.webgpuChecker;
+  }
+
+  /**
+   * Get the model manager instance
+   * @returns {ModelManager} Model manager
+   */
+  getModelManager(): ModelManager {
+    return this.modelManager;
   }
 
   /**

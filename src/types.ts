@@ -71,7 +71,7 @@ export interface WebGPUCapabilities {
 }
 
 /**
- * Device configuration
+ * Device configuration for model loading
  */
 export interface DeviceConfig {
   device?: string;
@@ -158,11 +158,21 @@ export interface CapabilityInfo extends WebGPUCapabilities {
 }
 
 /**
- * Interface for the loaded model registry entry
+ * Model registry entry for generation models
  */
 export interface ModelRegistryEntry {
-  tokenizer: PreTrainedTokenizer;
-  model: PreTrainedModel;
+  tokenizer: any;
+  model: any;
+}
+
+/**
+ * Information about a loaded embedding model
+ */
+export interface EmbeddingModelInfo {
+  tokenizer: any;
+  model: any;
+  pipeline?: any;
+  dimensions: number;
 }
 
 /**
@@ -239,17 +249,8 @@ export interface CompletionChunk {
  * Interface for TinyLM constructor options
  */
 export interface TinyLMOptions {
-  progressCallback?: (progress: ProgressUpdate) => void;
+  onProgress?: (progress: number) => void;
   progressThrottleTime?: number;
-  [key: string]: any;
-}
-
-/**
- * Interface for model loading options
- */
-export interface ModelLoadOptions {
-  model: string;
-  quantization?: string;
   [key: string]: any;
 }
 
@@ -276,7 +277,7 @@ export interface EmbeddingCreateOptions {
 }
 
 /**
- * Interface for embedding results
+ * Interface for embeddings result
  */
 export interface EmbeddingResult {
   object: string;
@@ -290,8 +291,11 @@ export interface EmbeddingResult {
     prompt_tokens: number;
     total_tokens: number;
   };
+  _tinylm?: {
+    time_ms: number;
+    dimensions: number;
+  };
 }
-
 
 /**
  * Interface for speech creation options with streaming
@@ -337,4 +341,100 @@ export interface SpeechStreamResult {
   _tinylm?: {
     time_ms: number;
   };
+}
+
+/**
+ * Model types supported by TinyLM
+ */
+export enum ModelType {
+  Generation = 'generation',
+  Embedding = 'embedding',
+  Audio = 'audio'
+}
+
+/**
+ * Base interface for all model load options
+ */
+export interface BaseModelLoadOptions {
+  model: string;
+  type?: ModelType;
+}
+
+/**
+ * Generation model load options
+ */
+export interface GenerationModelLoadOptions extends BaseModelLoadOptions {
+  type: ModelType.Generation;
+  quantization?: string;
+}
+
+/**
+ * Embedding model load options
+ */
+export interface EmbeddingModelLoadOptions extends BaseModelLoadOptions {
+  type: ModelType.Embedding;
+  dimensions?: number;
+}
+
+/**
+ * Audio model load options
+ */
+export interface AudioModelLoadOptions extends BaseModelLoadOptions {
+  type: ModelType.Audio;
+  device?: string;
+  dtype?: string;
+}
+
+/**
+ * Union type for all model load options
+ */
+export type ModelLoadOptions = GenerationModelLoadOptions | EmbeddingModelLoadOptions | AudioModelLoadOptions;
+
+/**
+ * Base interface for model registry entries
+ */
+export interface BaseModelInfo {
+  model: any;
+  tokenizer?: any;
+}
+
+/**
+ * Generation model registry entry
+ */
+export interface GenerationModelInfo extends BaseModelInfo {
+  tokenizer: any;
+  model: any;
+}
+
+/**
+ * Embedding model registry entry
+ */
+export interface EmbeddingModelInfo extends BaseModelInfo {
+  tokenizer: any;
+  model: any;
+  pipeline?: any;
+  dimensions: number;
+}
+
+/**
+ * Audio model registry entry
+ */
+export interface AudioModelInfo extends BaseModelInfo {
+  loaded: boolean;
+}
+
+export interface GenerationResult {
+  text: string;
+  tokens: number;
+  timeMs: number;
+}
+
+export interface AudioResult {
+  audio: ArrayBuffer;
+  timeMs: number;
+}
+
+export interface ProgressTracker {
+  onProgress(progress: number): void;
+  throttleTime?: number;
 }

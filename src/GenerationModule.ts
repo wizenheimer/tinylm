@@ -14,6 +14,7 @@ import { BaseModule } from './BaseModule';
 import { GenerationController } from './GenerationController';
 import { FileProgressTracker } from './FileProgressTracker';
 import { createStreamer } from './TextStreamHandler';
+import { ModelManager } from './ModelManager';
 import {
   ModelRegistryEntry,
   TokenizedInputs,
@@ -24,7 +25,10 @@ import {
   ChatMessage,
   GenerationFunctionParameters,
   GenerateOutput,
-  ModelOutput
+  ModelOutput,
+  ModelType,
+  GenerationModelInfo,
+  GenerationModelLoadOptions
 } from './types';
 
 /**
@@ -37,14 +41,16 @@ export class GenerationModule extends BaseModule {
   private model: PreTrainedModel | null = null;
   private modelIsLoading: boolean = false;
   private modelRegistry: Map<string, ModelRegistryEntry> = new Map();
+  private modelManager: ModelManager;
 
   /**
    * Create a new generation module
    * @param {any} tinyLM - Parent TinyLM instance
    */
-  constructor(tinyLM: any) {
-    super(tinyLM);
+  constructor(options: { modelManager: ModelManager }) {
+    super(options);
     this.controller = new GenerationController();
+    this.modelManager = options.modelManager;
   }
 
   /**
@@ -70,7 +76,10 @@ export class GenerationModule extends BaseModule {
     if (models.length > 0 && !lazyLoad) {
       const modelToLoad = models[0];
       if (modelToLoad) {
-        await this.loadModel({ model: modelToLoad });
+        await this.loadModel({
+          model: modelToLoad,
+          type: ModelType.Generation
+        });
       }
     } else if (models.length > 0) {
       // Just set the active model name without loading
@@ -83,269 +92,48 @@ export class GenerationModule extends BaseModule {
 
   /**
    * Load a model for text generation
-   * @param {ModelLoadOptions} options - Load options
-   * @returns {Promise<ModelRegistryEntry>} The loaded model
+   * @param {GenerationModelLoadOptions} options - Load options
+   * @returns {Promise<GenerationModelInfo>} The loaded model
    */
-  async loadModel(options: ModelLoadOptions): Promise<ModelRegistryEntry> {
-    const { model, quantization } = options;
-
-    if (!model) {
-      throw new Error('Model identifier is required');
-    }
-
-    // Return if already loading
-    if (this.modelIsLoading) {
-      throw new Error('Another model is currently loading');
-    }
-
-    // Set as active and return if already loaded
-    if (this.modelRegistry.has(model)) {
-      this.activeModel = model;
-      const registryEntry = this.modelRegistry.get(model)!;
-      this.tokenizer = registryEntry.tokenizer;
-      this.model = registryEntry.model;
-
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'model',
-        progress: 1,
-        percentComplete: 100,
-        message: `Model ${model} is already loaded`
-      });
-
-      return registryEntry;
-    }
-
-    // Set loading state
-    this.modelIsLoading = true;
-    this.activeModel = model;
-
-    try {
-      // Check hardware capabilities
-      const capabilities = await this.webgpuChecker.check();
-
-      // Get optimal config (or use user-provided quantization)
-      const config = await this.getOptimalDeviceConfig();
-      const modelConfig: Record<string, any> = {
-        // Only specify device and dtype if we have definitive information
-        ...(config.device ? { device: config.device } : {}),
-        ...(config.dtype || quantization ? { dtype: quantization || config.dtype } : {})
-      };
-
-      // Initialize file progress tracker for this model load
-      const fileTracker = new FileProgressTracker();
-
-      // Create a unique tracker ID for this load operation
-      const loadId = Date.now().toString();
-
-      // Initial progress message
-      this.progressTracker.update({
-        status: 'loading',
-        type: 'model',
-        progress: 0,
-        percentComplete: 0,
-        message: `Loading model ${model}`,
-        loadId,
-        modelId: model,
-        files: [] // Will be populated as files are discovered
-      });
-
-      // Function to send progress updates including file details
-      const sendProgressUpdate = () => {
-        const overall = fileTracker.getOverallProgress();
-        const files = fileTracker.getAllFiles();
-
-        // Create message based on overall progress
-        let message = `Loading model ${model}`;
-        if (overall.activeFileCount > 0) {
-          message += ` (${overall.activeFileCount} files remaining)`;
-          if (overall.formattedRemaining) {
-            message += ` - ETA: ${overall.formattedRemaining}`;
-          }
-        }
-
-        // Send detailed progress update including file list
-        this.progressTracker.update({
-          status: 'loading',
-          type: 'model',
-          progress: overall.progress,
-          percentComplete: overall.percentComplete,
-          message,
-          loadId,
-          modelId: model,
-          files, // Complete list of file statuses
-          overall // Overall progress stats
-        });
-      };
-
-      // Interface for progress updates from Hugging Face
-      interface HFProgress {
-        file?: string;
-        status?: string;
-        progress?: number;
-        total?: number;
-        [key: string]: any;
-      }
-
-      // Custom progress tracking that handles file-level progress
-      const trackedCallback = (progress: HFProgress) => {
-        // Skip updates without a file property (not file-related)
-        if (!progress.file) return;
-
-        // Normalize the file ID (sometimes it's a URL, sometimes a filename)
-        const fileId = progress.file.split('/').pop() || progress.file;
-
-        // Process based on status
-        if (progress.status === 'initiate') {
-          // Register a new file
-          fileTracker.registerFile(fileId, {
-            name: progress.file,
-            status: 'initiate',
-            bytesTotal: progress.total || 0
-          });
-        }
-        else if (progress.status === 'progress') {
-          // Update progress for existing file
-          fileTracker.updateFile(fileId, {
-            status: 'progress',
-            progress: progress.progress, // Using progress for compatibility
-            total: progress.total, // Using total for compatibility
-          });
-        }
-        else if (progress.status === 'done') {
-          // Mark file as complete
-          fileTracker.completeFile(fileId);
-        }
-
-        // Send progress update including all files
-        sendProgressUpdate();
-      };
-
-      // Track loading progress
-      let tokenizer: PreTrainedTokenizer, loadedModel: PreTrainedModel;
-
-      // Load tokenizer with progress tracking
-      const tokenizerPromise = AutoTokenizer.from_pretrained(model, {
-        progress_callback: (progress: any) => {
-          // Add component type to the progress update
-          const enhancedProgress = {
-            ...progress,
-            component: 'tokenizer'
-          };
-          trackedCallback(enhancedProgress);
-        }
-      });
-
-      // Load model with progress tracking
-      const modelPromise = AutoModelForCausalLM.from_pretrained(model, {
-        // Include device/dtype only if specifically determined
-        ...modelConfig,
-        progress_callback: (progress: any) => {
-          // Add component type to the progress update
-          const enhancedProgress = {
-            ...progress,
-            component: 'model'
-          };
-          trackedCallback(enhancedProgress);
-        }
-      });
-
-      // Wait for both to complete
-      [tokenizer, loadedModel] = await Promise.all([tokenizerPromise, modelPromise]);
-
-      // Store models in registry
-      this.modelRegistry.set(model, { tokenizer, model: loadedModel });
-
-      // Set as current model
-      this.tokenizer = tokenizer;
-      this.model = loadedModel;
-
-      // Final progress update - make sure to include the full file history
-      const finalFiles = fileTracker.getAllFiles();
-      const finalOverall = fileTracker.getOverallProgress();
-
-      // Update progress and mark as loaded
-      this.progressTracker.update({
-        status: 'ready',
-        type: 'model',
-        progress: 1,
-        percentComplete: 100,
-        message: `Model ${model} loaded successfully`,
-        loadId,
-        modelId: model,
-        files: finalFiles,
-        overall: finalOverall
-      });
-
-      return { tokenizer, model: loadedModel };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'model',
-        message: `Error loading model ${model}: ${errorMessage}`
-      });
-
-      console.error(`Error loading model ${model}:`, error);
-      throw new Error(`Failed to load model ${model}: ${errorMessage}`);
-    } finally {
-      this.modelIsLoading = false;
-    }
-  }
-
-  /**
-   * Offload a model from memory
-   * @param {Object} options - Offload options
-   * @returns {Promise<boolean>} Success status
-   */
-  async offloadModel(options: { model: string }): Promise<boolean> {
+  async loadModel(options: GenerationModelLoadOptions): Promise<GenerationModelInfo> {
     const { model } = options;
 
     if (!model) {
       throw new Error('Model identifier is required');
     }
 
-    if (!this.modelRegistry.has(model)) {
-      return false;
-    }
-
-    this.progressTracker.update({
-      status: 'offloading',
-      type: 'model',
-      message: `Offloading model ${model}`
-    });
-
     try {
-      // Remove from registry
-      this.modelRegistry.delete(model);
-
-      // Clear current model if it's the active one
-      if (this.activeModel === model) {
-        this.tokenizer = null;
-        this.model = null;
-        this.activeModel = null;
-      }
-
-      // Try to trigger garbage collection
-      this.triggerGC();
-
-      this.progressTracker.update({
-        status: 'offloaded',
-        type: 'model',
-        message: `Model ${model} removed from memory`
-      });
-
-      return true;
+      const registryEntry = await this.modelManager.loadGenerationModel(options);
+      this.activeModel = model;
+      this.tokenizer = registryEntry.tokenizer;
+      this.model = registryEntry.model;
+      return registryEntry;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.progressTracker.update({
-        status: 'error',
-        type: 'model',
-        message: `Error offloading model ${model}: ${errorMessage}`
-      });
-
-      return false;
+      throw new Error(`Failed to load model ${model}: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Get the currently active model
+   * @returns {ModelRegistryEntry | undefined} The active model
+   */
+  getActiveModel(): ModelRegistryEntry | undefined {
+    if (!this.activeModel) return undefined;
+    return this.modelManager.getGenerationModel(this.activeModel);
+  }
+
+  /**
+   * Offload a model from memory
+   * @param {string} model - Model identifier
+   * @returns {Promise<boolean>} Success status
+   */
+  async offloadModel(model: string): Promise<boolean> {
+    const success = await this.modelManager.offloadGenerationModel(model);
+    if (success && this.activeModel === model) {
+      this.activeModel = null;
+    }
+    return success;
   }
 
   /**
@@ -354,22 +142,18 @@ export class GenerationModule extends BaseModule {
    * @returns {Promise<CompletionResult>|AsyncGenerator<CompletionChunk>} Completion result or stream
    */
   async createCompletion(options: CompletionOptions): Promise<CompletionResult | AsyncGenerator<CompletionChunk>> {
-    const {
-      messages,
-      stream = false,
-      streamOptions = {},
-      model = null,
-      temperature = 0.7,
-      max_tokens = 1024,
-      do_sample = true,
-      top_k = 40,
-      top_p = 0.95,
-      ...otherOptions
-    } = options;
+    const { model = this.activeModel, messages, stream = false } = options;
 
-    // Load model if specified and different from current
-    if (model && model !== this.activeModel) {
-      await this.loadModel({ model });
+    if (!model) {
+      throw new Error('No model specified and no active model set');
+    }
+
+    // Load model if needed
+    if (model !== this.activeModel) {
+      await this.loadModel({
+        model,
+        type: ModelType.Generation
+      });
     }
 
     // Ensure model is loaded
@@ -387,21 +171,21 @@ export class GenerationModule extends BaseModule {
     try {
       if (stream) {
         return this._streamResponse(inputs, {
-          temperature,
-          max_new_tokens: max_tokens,
-          do_sample,
-          top_k,
-          top_p,
-          ...otherOptions
-        }, streamOptions);
+          temperature: 0.7,
+          max_new_tokens: 1024,
+          do_sample: true,
+          top_k: 40,
+          top_p: 0.95,
+          ...options
+        }, {});
       } else {
         return this._generateResponse(inputs, {
-          temperature,
-          max_new_tokens: max_tokens,
-          do_sample,
-          top_k,
-          top_p,
-          ...otherOptions
+          temperature: 0.7,
+          max_new_tokens: 1024,
+          do_sample: true,
+          top_k: 40,
+          top_p: 0.95,
+          ...options
         });
       }
     } finally {
@@ -742,14 +526,6 @@ export class GenerationModule extends BaseModule {
       type: 'generation',
       message: 'Generation state reset'
     });
-  }
-
-  /**
-   * Get active model identifier
-   * @returns {string|null} Active model identifier
-   */
-  getActiveModel(): string | null {
-    return this.activeModel;
   }
 
   /**
